@@ -80,7 +80,6 @@ async fn handle_get_command(envelop: CommandEnvelope, shared_state: Arc<Mutex<Sh
     });
 }
 
-// Communication layer holds unix domain socket server and handles commands from clients
 pub async fn run_communication_layer(
     command_tx: mpsc::Sender<CommandEnvelope>,
     shared_state: Arc<Mutex<SharedState>>,

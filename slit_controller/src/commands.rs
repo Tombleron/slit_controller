@@ -1,7 +1,6 @@
 use crate::models::{AxisProperty, Command, CommandEnvelope, CommandParams, CommandResult};
 use tokio::sync::oneshot;
 
-// Parse command from string format
 pub fn parse_command(cmd_str: &str) -> Option<(CommandEnvelope, oneshot::Receiver<CommandResult>)> {
     let parts: Vec<&str> = cmd_str.trim().split(':').collect();
     if parts.len() < 2 {

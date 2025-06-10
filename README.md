@@ -38,3 +38,25 @@ Where:
 - `{axis}` is the axis index (0-3)
 - `{property}` can be: position, state, velocity, acceleration, deceleration, or position_window
 - `{value}` is the new value for the property
+
+## Client Command Examples
+
+You can communicate with the slit controller using standard Unix tools like `nc` (netcat) or `socat`:
+
+### Using netcat (nc)
+
+```bash
+$ nc -U /tmp/slit_controller.sock
+get:0:position
+move:1:10.5
+stop:2
+```
+
+### Using socat
+
+```bash
+$ socat - UNIX-CONNECT:/tmp/slit_controller.sock
+get:0:position
+move:1:10.5
+stop:2
+```

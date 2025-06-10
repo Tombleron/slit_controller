@@ -11,7 +11,6 @@ pub async fn run_controller(
     mut command_rx: mpsc::Receiver<CommandEnvelope>,
     multi_axis_controller: Arc<Mutex<MultiAxis>>,
 ) -> Result<()> {
-    // Process commands from the channel
     while let Some(envelope) = command_rx.recv().await {
         let CommandEnvelope { command, response } = envelope;
         let mut multi_axis = multi_axis_controller.lock().await;
@@ -69,7 +68,6 @@ pub async fn run_controller(
             },
         };
 
-        // Send response, ignore if receiver is gone
         let _ = response.send(result);
     }
 
