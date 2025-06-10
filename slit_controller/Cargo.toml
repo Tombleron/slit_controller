@@ -1,0 +1,13 @@
+[package]
+name = "slit_controller"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.98"
+rf256 = { path = "../rf256" }
+standa = { path = "../standa" }
+tokio = { version = "1.45.1", features = ["full"] }
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }

@@ -1,0 +1,19 @@
+# Rust artifacts
+/target/
+*/target/
+**/*.rs.bk
+
+# Keep workspace Cargo.lock, but ignore it in individual crates
+/Cargo.lock
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Log files
+*.log
+logs/
+EOF
+   
