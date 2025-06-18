@@ -467,7 +467,7 @@ impl MultiAxis {
     pub fn position(&mut self, index: usize) -> io::Result<f32> {
         debug!("Getting position for axis {}", index);
         let axis = self.get_axis(index)?;
-        let result = axis.position_with_retries(3);
+        let result = axis.position_with_retries(5);
         if let Err(ref e) = result {
             error!("Failed to get position for axis {}: {}", index, e);
             if e.kind() == io::ErrorKind::BrokenPipe {

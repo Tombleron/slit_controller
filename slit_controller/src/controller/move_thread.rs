@@ -67,23 +67,52 @@ impl<T: Write + Read + Send> MoveThread<T> {
         let mut client = self.rf256_client.lock().unwrap();
 
         let id = self.rf256.read_id(client.deref_mut())?;
-
         if id != self.rf256.get_device_id() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "RF256 ID mismatch: expected {}, got {}",
-                    self.rf256.get_device_id(),
-                    id
-                ),
-            ));
-        }
+            warn!(
+                "RF256 ID mismatch: expected {}, got {}",
+                self.rf256.get_device_id(),
+                id
+            );
 
-        let result = self.rf256.read_data(client.deref_mut());
-        if let Err(ref e) = result {
-            error!(error = %e, "Failed to read position");
+            {
+                let mut buf = [0; 1024];
+                let _content_in_buffer = client.deref_mut().read(&mut buf);
+            }
+
+            // fetch new id
+            let new_id = self.rf256.read_id(client.deref_mut())?;
+
+            if new_id != self.rf256.get_device_id() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "RF256 ID mismatch: expected {}, got {}",
+                        self.rf256.get_device_id(),
+                        id
+                    ),
+                ));
+            }
         }
+        let result = self.rf256.read_data(client.deref_mut());
+
         result
+    }
+
+    fn position_with_retries(&self, retries: u8) -> io::Result<f32> {
+        let mut attempts = 0;
+        loop {
+            match self.position() {
+                Ok(position) => return Ok(position),
+                Err(e) if attempts < retries => {
+                    warn!("Failed to read position (attempt {}): {}", attempts + 1, e);
+                    attempts += 1;
+                }
+                Err(e) => {
+                    error!("Failed to read position after {} attempts: {}", retries, e);
+                    return Err(e);
+                }
+            }
+        }
     }
 
     fn is_moving(&self) -> bool {
@@ -172,7 +201,7 @@ impl<T: Write + Read + Send> MoveThread<T> {
         );
 
         while self.is_moving() && !self.time_limit_exceeded() {
-            let current_position = match self.position() {
+            let current_position = match self.position_with_retries(5) {
                 Ok(pos) => pos,
                 Err(e) => {
                     error!(error = %e, "Error reading position, aborting move thread");
