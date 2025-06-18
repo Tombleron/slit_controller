@@ -8,7 +8,7 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSlot
 from PyQt5.QtGui import QFont, QColor
 import pyqtgraph as pg
 
-from slit_controller import SlitController, SlitControllerError, State
+from slit_controller import Slit, SlitControllerError, StandaState #type: ignore
 from typing import Dict
 
 class AxisControlWidget(QGroupBox):
@@ -593,7 +593,7 @@ class MotorControlApp(QMainWindow):
         self.status_bar.addPermanentWidget(self.connection_status)
 
         # Set up controller
-        self.controller = SlitController()
+        self.controller = Slit()
         self.connected = False
 
         # Create central widget and layout

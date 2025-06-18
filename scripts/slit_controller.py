@@ -66,16 +66,6 @@ class Slit:
             self.connect()
 
         try:
-            # Clear any existing data in the socket buffer before sending a new command
-            self.socket.settimeout(0.001)
-            try:
-                while True:
-                    data = self.socket.recv(1024)
-                    if not data:
-                        break
-            except socket.timeout:
-                pass
-            self.socket.settimeout(None)  # Reset to blocking mode
             self.socket.sendall(command.encode('utf-8')) # type: ignore
             response = self.socket.recv(1024).decode('utf-8').strip() # type: ignore
 
