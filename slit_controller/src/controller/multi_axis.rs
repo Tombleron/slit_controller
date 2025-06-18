@@ -473,19 +473,6 @@ impl MultiAxis {
             if e.kind() == io::ErrorKind::BrokenPipe {
                 error!("Detected broken pipe, attempting to reconnect RF256 client");
                 self.reconnect_rf256_client()?;
-            } else if e.kind() == io::ErrorKind::InvalidData {
-                error!(
-                    "Detected invalid data, attempting to clear RF256 buffer for index {}",
-                    index
-                );
-
-                let rf256_client = self.get_rf256_client()?;
-                let mut stream = rf256_client.lock().unwrap();
-                let mut buf = vec![0; 1024];
-                let _ = stream.read_to_end(&mut buf);
-                drop(stream);
-
-                error!("Reconnected RF256 client for axis {}", index);
             }
         } else if let Ok(pos) = result {
             debug!("Got position {} for axis {}", pos, index);
