@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
     }
-    let _config = slit_controller::config::load_config()?;
+    let config = slit_controller::config::load_config()?;
 
     logging::init();
 
@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
         axes: [None, None, None, None],
     }));
 
-    let multi_axis_controller = create_controller();
+    let multi_axis_controller = create_controller(config.multi_axis_config);
 
     let multi_axis = multi_axis_controller.clone();
     let controller_handle =

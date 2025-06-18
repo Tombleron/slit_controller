@@ -76,7 +76,6 @@ pub async fn run_controller(
     Ok(())
 }
 
-pub fn create_controller() -> Arc<Mutex<MultiAxis>> {
-    let config = MultiAxisConfig::default();
+pub fn create_controller(config: MultiAxisConfig) -> Arc<Mutex<MultiAxis>> {
     Arc::new(Mutex::new(MultiAxis::from_config(config)))
 }

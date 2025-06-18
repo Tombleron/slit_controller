@@ -6,7 +6,7 @@ use crate::controller::multi_axis::MultiAxisConfig;
 
 #[derive(Default, Deserialize, Serialize, Debug)]
 pub struct Config {
-    multi_axis_config: MultiAxisConfig,
+    pub multi_axis_config: MultiAxisConfig,
 }
 
 pub fn load_config() -> io::Result<Config> {
