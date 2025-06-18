@@ -473,6 +473,12 @@ impl MultiAxis {
             if e.kind() == io::ErrorKind::BrokenPipe {
                 debug!("Detected broken pipe, attempting to reconnect RF256 client");
                 self.reconnect_rf256_client()?;
+            } else if e.kind() == io::ErrorKind::InvalidData {
+                warn!(
+                    "Detected invalid data, attempting to reconnect Standa client for index {}",
+                    index
+                );
+                self.reconnect_standa_client(index)?;
             }
         } else if let Ok(pos) = result {
             debug!("Got position {} for axis {}", pos, index);
