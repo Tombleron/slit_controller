@@ -137,6 +137,23 @@ impl SingleAxis {
         result
     }
 
+    pub fn position_with_retries(&self, retries: u8) -> io::Result<f32> {
+        let mut attempts = 0;
+        loop {
+            match self.position() {
+                Ok(position) => return Ok(position),
+                Err(e) if attempts < retries => {
+                    warn!("Failed to read position (attempt {}): {}", attempts + 1, e);
+                    attempts += 1;
+                }
+                Err(e) => {
+                    error!("Failed to read position after {} attempts: {}", retries, e);
+                    return Err(e);
+                }
+            }
+        }
+    }
+
     pub fn position(&self) -> io::Result<f32> {
         debug!("Acquiring lock on RF256 client for position reading");
         let mut client = match self.rf256_client.lock() {
