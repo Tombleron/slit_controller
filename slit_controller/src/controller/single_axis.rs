@@ -1,5 +1,6 @@
 use std::{
-    io::{self, Read, Write},
+    io,
+    net::TcpStream,
     ops::DerefMut as _,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -12,7 +13,7 @@ use std::{
 use crate::controller::move_thread::MoveThread;
 use rf256::Rf256;
 use standa::{command::state::StateParams, Standa};
-use tracing::{debug, field::debug, info, warn};
+use tracing::{debug, error, field::debug, info, warn};
 use trid::Trid;
 
 #[derive(Debug, Clone, Copy)]
@@ -36,13 +37,13 @@ impl Default for SingleAxisParams {
     }
 }
 
-pub struct SingleAxis<T: Write + Read + Send + 'static> {
+pub struct SingleAxis {
     rf256_id: u8,
     trid_id: u8,
 
-    rf256_client: Arc<Mutex<T>>,
-    trid_client: Arc<Mutex<T>>,
-    standa_client: Arc<Mutex<T>>,
+    rf256_client: Arc<Mutex<TcpStream>>,
+    trid_client: Arc<Mutex<TcpStream>>,
+    standa_client: Arc<Mutex<TcpStream>>,
 
     params: SingleAxisParams,
 
@@ -50,7 +51,7 @@ pub struct SingleAxis<T: Write + Read + Send + 'static> {
     moving: Arc<AtomicBool>,
 }
 
-impl<T: Write + Read + Send> SingleAxis<T> {
+impl SingleAxis {
     pub fn get_velocity(&self) -> u32 {
         self.params.velocity
     }
@@ -87,13 +88,13 @@ impl<T: Write + Read + Send> SingleAxis<T> {
     }
 }
 
-impl<T: Write + Read + Send> SingleAxis<T> {
+impl SingleAxis {
     pub fn new(
-        rf256_client: Arc<Mutex<T>>,
+        rf256_client: Arc<Mutex<TcpStream>>,
         rf256_id: u8,
-        trid_client: Arc<Mutex<T>>,
+        trid_client: Arc<Mutex<TcpStream>>,
         trid_id: u8,
-        standa_client: Arc<Mutex<T>>,
+        standa_client: Arc<Mutex<TcpStream>>,
     ) -> Self {
         info!("Initializing SingleAxis with id {}", rf256_id);
         let params = SingleAxisParams::default();
@@ -154,9 +155,16 @@ impl<T: Write + Read + Send> SingleAxis<T> {
         let id = Rf256::new(self.rf256_id).read_id(client.deref_mut())?;
         if id != self.rf256_id {
             warn!("RF256 ID mismatch: expected {}, got {}", self.rf256_id, id);
-            client.flush().unwrap_or_else(|e| {
-                warn!("Failed to flush RF256 client: {}", e);
-            });
+
+            let mut buf = [0; 1024];
+            let content_in_buffer = client.deref_mut().peek(&mut buf);
+            error!(
+                "RF256 ID mismatch: expected {}, got {}. Buffer content: {:?}",
+                self.rf256_id,
+                id,
+                String::from_utf8_lossy(&buf[0..content_in_buffer.unwrap_or(0)])
+            );
+
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("RF256 ID mismatch: expected {}, got {}", self.rf256_id, id),
@@ -335,7 +343,7 @@ impl<T: Write + Read + Send> SingleAxis<T> {
     }
 }
 
-impl<T: Write + Read + Send> Drop for SingleAxis<T> {
+impl Drop for SingleAxis {
     fn drop(&mut self) {
         if self.moving.load(Ordering::SeqCst) {
             let _ = self.stop();

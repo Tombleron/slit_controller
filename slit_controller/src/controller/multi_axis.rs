@@ -17,7 +17,7 @@ pub struct MultiAxis {
     rf256_ids: [u8; 4],
     trid_ids: [u8; 4],
 
-    axes: [Option<SingleAxis<TcpStream>>; 4],
+    axes: [Option<SingleAxis>; 4],
 
     config: MultiAxisConfig,
 }
@@ -273,7 +273,7 @@ impl MultiAxis {
         Ok(())
     }
 
-    fn get_axis(&mut self, index: usize) -> io::Result<&mut SingleAxis<TcpStream>> {
+    fn get_axis(&mut self, index: usize) -> io::Result<&mut SingleAxis> {
         if self.axes[index].is_none()
             || self.standa_clients[index].is_none()
             || self.rf256_client.is_none()
@@ -482,10 +482,8 @@ impl MultiAxis {
                 let rf256_client = self.get_rf256_client()?;
                 let mut stream = rf256_client.lock().unwrap();
                 let mut buf = vec![0; 1024];
-                stream.read_to_end(&mut buf).map_err(|e| {
-                    error!("Failed to clear RF256 buffer for index {}: {}", index, e);
-                    e
-                })?;
+                let _ = stream.read_to_end(&mut buf);
+                drop(stream);
 
                 error!("Reconnected RF256 client for axis {}", index);
             }
