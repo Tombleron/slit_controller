@@ -38,7 +38,8 @@ After=network.target
 Type=simple
 User=root
 Group=root
-ExecStart=/opt/slit_controller/bin/slit_controller --config /opt/slit_controller/config/default_config.toml
+Environment="CONFIG_PATH=/opt/slit_controller/config/default_config.toml"
+ExecStart=/opt/slit_controller/bin/slit_controller
 ExecStartPost=/bin/bash -c 'sleep 1; chmod 666 /tmp/slit_controller.sock'
 WorkingDirectory=/opt/slit_controller
 Restart=always
