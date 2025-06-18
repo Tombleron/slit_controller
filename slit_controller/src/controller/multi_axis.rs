@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Read};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -475,10 +475,18 @@ impl MultiAxis {
                 self.reconnect_rf256_client()?;
             } else if e.kind() == io::ErrorKind::InvalidData {
                 error!(
-                    "Detected invalid data, attempting to reconnect RF256 client for index {}",
+                    "Detected invalid data, attempting to clear RF256 buffer for index {}",
                     index
                 );
-                self.reconnect_rf256_client()?;
+
+                let rf256_client = self.get_rf256_client()?;
+                let mut stream = rf256_client.lock().unwrap();
+                let mut buf = vec![0; 1024];
+                stream.read_to_end(&mut buf).map_err(|e| {
+                    error!("Failed to clear RF256 buffer for index {}: {}", index, e);
+                    e
+                })?;
+
                 error!("Reconnected RF256 client for axis {}", index);
             }
         } else if let Ok(pos) = result {
