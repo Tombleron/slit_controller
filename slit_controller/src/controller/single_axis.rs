@@ -1,5 +1,5 @@
 use std::{
-    io,
+    io::{self, Read},
     net::TcpStream,
     ops::DerefMut as _,
     sync::{
@@ -156,19 +156,20 @@ impl SingleAxis {
         if id != self.rf256_id {
             warn!("RF256 ID mismatch: expected {}, got {}", self.rf256_id, id);
 
-            let mut buf = [0; 1024];
-            let content_in_buffer = client.deref_mut().peek(&mut buf);
-            error!(
-                "RF256 ID mismatch: expected {}, got {}. Buffer content: {:?}",
-                self.rf256_id,
-                id,
-                String::from_utf8_lossy(&buf[0..content_in_buffer.unwrap_or(0)])
-            );
+            {
+                let mut buf = [0; 1024];
+                let _content_in_buffer = client.deref_mut().read(&mut buf);
+            }
 
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("RF256 ID mismatch: expected {}, got {}", self.rf256_id, id),
-            ));
+            // fetch new id
+            let new_id = Rf256::new(self.rf256_id).read_id(client.deref_mut())?;
+
+            if new_id != self.rf256_id {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("RF256 ID mismatch: expected {}, got {}", self.rf256_id, id),
+                ));
+            }
         }
         let result = Rf256::new(self.rf256_id).read_data(client.deref_mut());
 
