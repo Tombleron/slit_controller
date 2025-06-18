@@ -1,5 +1,5 @@
-use std::io::{self, Read};
-use std::net::{Shutdown, SocketAddr, TcpStream};
+use std::io::{self};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
