@@ -322,9 +322,9 @@ class SlitController(MotorController):
     def GetAxisExtraPar(self, axis: int, parameter):
         name: str = parameter.lower()
 
-        if name == "position_window":
+        if name == "positionwindow":
             return self.controller.get_position_window(axis)
-        elif name == "time_limit":
+        elif name == "timelimit":
             return self.controller.get_time_limit(axis)
         elif name == "temperature":
             return self.controller.get_temperature(axis)
@@ -338,9 +338,9 @@ class SlitController(MotorController):
     def SetAxisExtraPar(self, axis: int, parameter, value):
         name: str = parameter.lower()
 
-        if name == "position_window":
+        if name == "positionwindow":
             self.controller.set_position_window(axis, value)
-        elif name == "time_limit":
+        elif name == "timelimit":
             self.controller.set_time_limit(axis, value)
         elif name == "lowerlimit":
             self.limits[axis] = (value, self.limits[axis][1])
