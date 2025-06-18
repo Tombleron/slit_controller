@@ -1,3 +1,3 @@
 [workspace]
 resolver = "3"
-members = ["rf256", "slit_controller", "standa"]
+members = ["rf256", "slit_controller", "standa", "trid"]

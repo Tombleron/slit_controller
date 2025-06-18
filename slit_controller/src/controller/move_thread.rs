@@ -5,12 +5,12 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use rf256::Rf256;
 use standa::{command::state::StateParams, Standa};
-use tracing::{info, instrument};
+use tracing::{error, info, instrument, warn};
 
 const STEPS_PER_MM: u32 = 800;
 
@@ -23,18 +23,22 @@ pub struct MoveThread<T: Write + Read + Send> {
 
     target_position: f32,
     position_window: f32,
+    time_limit: Duration,
+
+    filter: MovingAverage,
 
     moving: Arc<AtomicBool>,
+    start_time: Instant,
 }
 
 impl<T: Write + Read + Send> MoveThread<T> {
-    #[instrument(skip(rf256_client, standa_client, moving), fields(rf256_id))]
     pub fn new(
         rf256_client: Arc<Mutex<T>>,
         standa_client: Arc<Mutex<T>>,
         rf256_id: u8,
         target_position: f32,
         position_window: f32,
+        time_limit: Duration,
         moving: Arc<AtomicBool>,
     ) -> Self {
         info!(
@@ -48,51 +52,76 @@ impl<T: Write + Read + Send> MoveThread<T> {
             rf256: Rf256::new(rf256_id),
             standa: Standa::new(),
 
+            filter: MovingAverage::new(20),
+
             target_position,
             position_window,
+            time_limit,
+
             moving,
+            start_time: Instant::now(),
         }
     }
 
-    #[instrument(skip(self), name = "get_position")]
     fn position(&self) -> io::Result<f32> {
-        info!("Attempting to read current position");
         let mut client = self.rf256_client.lock().unwrap();
+
+        let id = self.rf256.read_id(client.deref_mut())?;
+
+        if id != self.rf256.get_device_id() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "RF256 ID mismatch: expected {}, got {}",
+                    self.rf256.get_device_id(),
+                    id
+                ),
+            ));
+        }
+
         let result = self.rf256.read_data(client.deref_mut());
-        if let Ok(pos) = result {
-            info!(position = pos, "Read current position successfully");
-        } else if let Err(ref e) = result {
-            tracing::error!(error = %e, "Failed to read position");
+        if let Err(ref e) = result {
+            error!(error = %e, "Failed to read position");
         }
         result
     }
 
-    #[instrument(skip(self), name = "check_movement_status")]
     fn is_moving(&self) -> bool {
         let moving = self.moving.load(Ordering::SeqCst);
-        info!(moving, "Checking movement status");
         moving
     }
 
-    #[instrument(skip(self), name = "get_standa_state")]
+    fn time_limit_exceeded(&self) -> bool {
+        let elapsed = self.start_time.elapsed();
+        let exceeded = elapsed > self.time_limit;
+        if exceeded {
+            warn!(
+                elapsed_ms = elapsed.as_millis(),
+                limit_ms = self.time_limit.as_millis(),
+                "Time limit exceeded"
+            );
+        }
+        exceeded
+    }
+
     fn get_state(&self) -> io::Result<StateParams> {
-        info!("Requesting Standa state");
         let mut client = self.standa_client.lock().unwrap();
         let result = self.standa.get_state(client.deref_mut());
-        if let Ok(ref state) = result {
-            info!(
-                is_moving = state.is_moving(),
-                left_switch = state.left_switch(),
-                right_switch = state.right_switch(),
-                "Got Standa state successfully"
-            );
-        } else if let Err(ref e) = result {
-            tracing::error!(error = %e, "Failed to get Standa state");
+        if let Err(ref e) = result {
+            error!(error = %e, "Failed to get Standa state");
         }
         result
     }
 
-    #[instrument(skip(self), fields(steps, sub_steps))]
+    fn stop(&self) -> io::Result<()> {
+        let mut client = self.standa_client.lock().unwrap();
+        let result = self.standa.stop(client.deref_mut());
+        if let Err(ref e) = result {
+            error!(error = %e, "Failed to stop Standa movement");
+        }
+        result
+    }
+
     fn send_steps(&self, steps: i32, sub_steps: i16) -> io::Result<()> {
         info!(steps, sub_steps, "Sending move command to Standa");
         let mut client = self.standa_client.lock().unwrap();
@@ -100,74 +129,59 @@ impl<T: Write + Read + Send> MoveThread<T> {
             .standa
             .move_relative(client.deref_mut(), steps, sub_steps);
         if let Err(ref e) = result {
-            tracing::error!(error = %e, "Failed to send steps to Standa");
-        } else {
-            info!("Successfully sent move command to Standa");
+            error!(error = %e, "Failed to send steps to Standa");
         }
         result
     }
 
-    #[instrument(skip(self), fields(error, steps, sub_steps))]
     fn move_relative(&self, error: f32) -> io::Result<()> {
         let (steps, sub_steps) = if error.abs() == 0.0 {
             (0, 0)
         } else if error.abs() < 0.001 {
-            (0, if error > 0.0 { 1 } else { -1 })
+            (0, if error > 0.0 { 5 } else { -5 })
+            // (if error > 0.0 { 1 } else { -1 }, 0)
         } else {
             ((error * STEPS_PER_MM as f32) as i32, 0)
         };
 
-        info!(error, steps, sub_steps, "Moving relative");
         let result = self.send_steps(steps, sub_steps);
         if let Err(ref e) = result {
-            tracing::error!(error = %e, "Failed to move relative");
+            error!(error = %e, "Failed to move relative");
             return result;
         }
 
         // Wait until motion completes or stop is requested
-        info!("Waiting for motion to complete");
         let mut wait_count = 0;
-        while self.is_moving() && self.get_state()?.is_moving() {
+        while self.is_moving() && self.get_state()?.is_moving() && !self.time_limit_exceeded() {
             wait_count += 1;
             if wait_count % 50 == 0 {
                 // Log every ~500ms
-                info!(
-                    wait_time_ms = wait_count * 10,
-                    "Still waiting for motion to complete"
-                );
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        info!("Motion completed after waiting for ~{}ms", wait_count * 10);
 
         Ok(())
     }
 
     #[instrument(skip(self), fields(target_position, position_window))]
-    pub fn run(&self) {
+    pub fn run(&mut self) {
         info!(
             target_position = self.target_position,
             position_window = self.position_window,
             "Starting move thread"
         );
 
-        let mut loop_count = 0;
-        while self.is_moving() {
-            loop_count += 1;
-            info!(
-                iteration = loop_count,
-                "Starting positioning loop iteration"
-            );
-
+        while self.is_moving() && !self.time_limit_exceeded() {
             let current_position = match self.position() {
                 Ok(pos) => pos,
                 Err(e) => {
-                    tracing::error!(error = %e, "Error reading position, aborting move thread");
+                    error!(error = %e, "Error reading position, aborting move thread");
                     return;
                 }
             };
 
             let error = current_position - self.target_position;
+            self.filter.add(error);
             info!(
                 current_position,
                 target_position = self.target_position,
@@ -177,24 +191,19 @@ impl<T: Write + Read + Send> MoveThread<T> {
             );
 
             // Check if we are within the position window
-            if error.abs() <= self.position_window {
-                info!(
-                    error_abs = error.abs(),
-                    "Target position reached within window"
-                );
+            if self.filter.get_rms() <= self.position_window {
                 break;
             }
 
-            info!(error, "Moving to correct position error");
             if let Err(e) = self.move_relative(error) {
-                tracing::error!(error = %e, "Error moving Standa, aborting move thread");
+                error!(error = %e, "Error moving Standa, aborting move thread");
                 return;
             }
 
             let state = match self.get_state() {
                 Ok(state) => state,
                 Err(e) => {
-                    tracing::error!(error = %e, "Error getting state, aborting move thread");
+                    error!(error = %e, "Error getting state, aborting move thread");
                     return;
                 }
             };
@@ -215,17 +224,51 @@ impl<T: Write + Read + Send> MoveThread<T> {
                 break;
             }
 
-            info!("Sleeping before next positioning iteration");
             std::thread::sleep(Duration::from_millis(10));
         }
-
-        info!(iterations = loop_count, "Move thread completed");
     }
 }
 
 impl<T: Write + Read + Send> Drop for MoveThread<T> {
     fn drop(&mut self) {
-        println!("Stopping move thread");
+        info!("Stopping move thread");
         self.moving.store(false, Ordering::SeqCst);
+
+        info!("Stopping Standa movement");
+        if let Err(e) = self.stop() {
+            error!(error = %e, "Failed to stop Standa movement on drop");
+        } else {
+            info!("Successfully stopped Standa movement on drop");
+        }
+    }
+}
+
+struct MovingAverage {
+    values: Vec<f32>,
+    max_size: usize,
+}
+
+impl MovingAverage {
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            values: Vec::with_capacity(max_size),
+            max_size,
+        }
+    }
+
+    pub fn add(&mut self, value: f32) {
+        if self.values.len() >= self.max_size {
+            self.values.remove(0);
+        }
+        self.values.push(value);
+    }
+
+    pub fn get_rms(&self) -> f32 {
+        if self.values.is_empty() {
+            0.0
+        } else {
+            let sum_of_squares: f32 = self.values.iter().map(|&v| v * v).sum();
+            (sum_of_squares / self.values.len() as f32).sqrt()
+        }
     }
 }

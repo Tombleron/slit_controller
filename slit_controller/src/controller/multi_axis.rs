@@ -3,6 +3,7 @@ use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use standa::command::state::StateParams;
 use tracing::{debug, error, info, instrument, warn};
 
@@ -10,8 +11,11 @@ use crate::controller::single_axis::SingleAxis;
 
 pub struct MultiAxis {
     rf256_client: Option<Arc<Mutex<TcpStream>>>,
+    trid_client: Option<Arc<Mutex<TcpStream>>>,
     standa_clients: [Option<Arc<Mutex<TcpStream>>>; 4],
+
     rf256_ids: [u8; 4],
+    trid_ids: [u8; 4],
 
     axes: [Option<SingleAxis<TcpStream>>; 4],
 
@@ -19,13 +23,6 @@ pub struct MultiAxis {
 }
 
 impl MultiAxis {
-    #[instrument(
-        skip(config),
-        fields(
-            rf256_ip = %config.rf256_ip,
-            rf256_port = %config.rf256_port,
-        )
-    )]
     pub fn from_config(config: MultiAxisConfig) -> Self {
         info!("Initializing MultiAxis controller");
         // Empty clients for RF256 and Standa
@@ -33,16 +30,54 @@ impl MultiAxis {
         // is requested
         Self {
             rf256_client: None,
+            trid_client: None,
             standa_clients: [None, None, None, None],
             rf256_ids: [
-                config.upper_standa_id,
-                config.lower_standa_id,
-                config.left_standa_id,
-                config.right_standa_id,
+                config.upper_rf256_id,
+                config.lower_rf256_id,
+                config.left_rf256_id,
+                config.right_rf256_id,
+            ],
+            trid_ids: [
+                config.upper_trid_id,
+                config.lower_trid_id,
+                config.left_trid_id,
+                config.right_trid_id,
             ],
             axes: [None, None, None, None],
             config,
         }
+    }
+
+    fn get_trid_client(&mut self) -> io::Result<Arc<Mutex<TcpStream>>> {
+        if self.trid_client.is_none() {
+            debug!("TRID client is not initialized, creating a new one");
+
+            debug!(
+                "Connecting to TRID at {}:{}",
+                self.config.trid_ip, self.config.trid_port
+            );
+            match TcpStream::connect_timeout(
+                &SocketAddr::new(self.config.trid_ip.parse().unwrap(), self.config.trid_port),
+                Duration::from_secs(1),
+            ) {
+                Ok(stream) => {
+                    if let Err(e) =
+                        stream.set_read_timeout(Some(std::time::Duration::from_millis(100)))
+                    {
+                        warn!("Failed to set read timeout for TRID client: {}", e);
+                    }
+
+                    debug!("Successfully connected to TRID");
+                    self.trid_client = Some(Arc::new(Mutex::new(stream)));
+                }
+                Err(e) => {
+                    error!("Failed to connect to TRID: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+        Ok(self.trid_client.as_ref().unwrap().clone())
     }
 
     #[instrument(skip(self))]
@@ -162,6 +197,36 @@ impl MultiAxis {
         Ok(())
     }
 
+    fn reconnect_trid_client(&mut self) -> io::Result<()> {
+        if let Some(client) = &self.trid_client {
+            debug!(
+                "Reconnecting to TRID at {}:{}",
+                self.config.trid_ip, self.config.trid_port
+            );
+            let mut stream = client.lock().unwrap();
+            match TcpStream::connect_timeout(
+                &SocketAddr::new(self.config.trid_ip.parse().unwrap(), self.config.trid_port),
+                Duration::from_secs(1),
+            ) {
+                Ok(new_stream) => {
+                    *stream = new_stream;
+                    if let Err(e) =
+                        stream.set_read_timeout(Some(std::time::Duration::from_millis(100)))
+                    {
+                        warn!("Failed to set read timeout for TRID client: {}", e);
+                        return Err(e);
+                    }
+                    debug!("Successfully reconnected to TRID");
+                }
+                Err(e) => {
+                    error!("Failed to reconnect to TRID: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[instrument(skip(self))]
     fn reconnect_standa_client(&mut self, index: usize) -> io::Result<()> {
         if let Some(client) = &self.standa_clients[index] {
@@ -208,7 +273,6 @@ impl MultiAxis {
         Ok(())
     }
 
-    #[instrument(skip(self))]
     fn get_axis(&mut self, index: usize) -> io::Result<&mut SingleAxis<TcpStream>> {
         if self.axes[index].is_none()
             || self.standa_clients[index].is_none()
@@ -220,11 +284,14 @@ impl MultiAxis {
             );
             let rf256_client = self.get_rf256_client()?;
             let standa_client = self.get_standa_client(index)?;
+            let trid_client = self.get_trid_client()?;
 
             debug!("Creating new SingleAxis controller for index {}", index);
             self.axes[index] = Some(SingleAxis::new(
                 rf256_client,
                 self.rf256_ids[index],
+                trid_client,
+                self.trid_ids[index],
                 standa_client,
             ));
             debug!(
@@ -236,7 +303,6 @@ impl MultiAxis {
         Ok(self.axes[index].as_mut().unwrap())
     }
 
-    #[instrument(skip(self))]
     pub fn get_velocity(&mut self, index: usize) -> io::Result<u32> {
         debug!("Getting velocity for axis {}", index);
         let axis = self.get_axis(index)?;
@@ -245,7 +311,6 @@ impl MultiAxis {
         Ok(velocity)
     }
 
-    #[instrument(skip(self))]
     pub fn set_velocity(&mut self, index: usize, velocity: u32) -> io::Result<()> {
         debug!("Setting velocity to {} for axis {}", velocity, index);
         let axis = self.get_axis(index)?;
@@ -257,7 +322,6 @@ impl MultiAxis {
         Ok(())
     }
 
-    #[instrument(skip(self))]
     pub fn get_acceleration(&mut self, index: usize) -> io::Result<u16> {
         debug!("Getting acceleration for axis {}", index);
         let axis = self.get_axis(index)?;
@@ -266,7 +330,6 @@ impl MultiAxis {
         Ok(acceleration)
     }
 
-    #[instrument(skip(self))]
     pub fn set_acceleration(&mut self, index: usize, acceleration: u16) -> io::Result<()> {
         debug!(
             "Setting acceleration to {} for axis {}",
@@ -281,7 +344,6 @@ impl MultiAxis {
         Ok(())
     }
 
-    #[instrument(skip(self))]
     pub fn get_deceleration(&mut self, index: usize) -> io::Result<u16> {
         debug!("Getting deceleration for axis {}", index);
         let axis = self.get_axis(index)?;
@@ -290,7 +352,6 @@ impl MultiAxis {
         Ok(deceleration)
     }
 
-    #[instrument(skip(self))]
     pub fn set_deceleration(&mut self, index: usize, deceleration: u16) -> io::Result<()> {
         debug!(
             "Setting deceleration to {} for axis {}",
@@ -305,7 +366,6 @@ impl MultiAxis {
         Ok(())
     }
 
-    #[instrument(skip(self))]
     pub fn get_position_window(&mut self, index: usize) -> io::Result<f32> {
         debug!("Getting position window for axis {}", index);
         let axis = self.get_axis(index)?;
@@ -314,7 +374,6 @@ impl MultiAxis {
         Ok(position_window)
     }
 
-    #[instrument(skip(self))]
     pub fn set_position_window(&mut self, index: usize, position_window: f32) -> io::Result<()> {
         debug!(
             "Setting position window to {} for axis {}",
@@ -329,7 +388,30 @@ impl MultiAxis {
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    pub fn get_time_limit(&mut self, index: usize) -> io::Result<Duration> {
+        debug!("Getting time limit for axis {}", index);
+        let axis = self.get_axis(index)?;
+        let time_limit = axis.get_time_limit();
+        debug!("Got time limit {} for axis {}", time_limit.as_secs(), index);
+        Ok(time_limit)
+    }
+
+    pub fn set_time_limit(&mut self, index: usize, time_limit: Duration) -> io::Result<()> {
+        debug!(
+            "Setting time limit to {} for axis {}",
+            time_limit.as_secs(),
+            index
+        );
+        let axis = self.get_axis(index)?;
+        axis.set_time_limit(time_limit);
+        debug!(
+            "Successfully set time limit to {} for axis {}",
+            time_limit.as_secs(),
+            index
+        );
+        Ok(())
+    }
+
     pub fn is_moving(&mut self, index: usize) -> bool {
         debug!("Checking if axis {} is moving", index);
         // FIXME: Probably this should return an error instead of false
@@ -346,7 +428,6 @@ impl MultiAxis {
         }
     }
 
-    #[instrument(skip(self))]
     pub fn move_to_position(&mut self, index: usize, position: f32) -> Result<(), String> {
         debug!("Moving axis {} to position {}", index, position);
         let axis = self.get_axis(index).map_err(|e| {
@@ -368,7 +449,6 @@ impl MultiAxis {
         result
     }
 
-    #[instrument(skip(self))]
     pub fn stop(&mut self, index: usize) -> Result<(), String> {
         debug!("Stopping axis {}", index);
         let axis = self.get_axis(index).map_err(|e| {
@@ -384,7 +464,6 @@ impl MultiAxis {
         result
     }
 
-    #[instrument(skip(self))]
     pub fn position(&mut self, index: usize) -> io::Result<f32> {
         debug!("Getting position for axis {}", index);
         let axis = self.get_axis(index)?;
@@ -401,7 +480,22 @@ impl MultiAxis {
         result
     }
 
-    #[instrument(skip(self))]
+    pub fn temperature(&mut self, index: usize) -> io::Result<u16> {
+        debug!("Getting temperature for axis {}", index);
+        let axis = self.get_axis(index)?;
+        let result = axis.temperature();
+        if let Err(ref e) = result {
+            error!("Failed to get temperature for axis {}: {}", index, e);
+            if e.kind() == io::ErrorKind::BrokenPipe || e.kind() == io::ErrorKind::WouldBlock {
+                warn!("Detected broken pipe or would block, attempting to reconnect Standa client for index {}", index);
+                self.reconnect_trid_client()?;
+            }
+        } else {
+            debug!("Successfully got temperature for axis {}", index);
+        }
+        result
+    }
+
     pub fn state(&mut self, index: usize) -> io::Result<StateParams> {
         debug!("Getting state for axis {}", index);
         let axis = self.get_axis(index)?;
@@ -419,25 +513,33 @@ impl MultiAxis {
     }
 }
 
+#[derive(Deserialize, Debug, Serialize)]
 pub struct MultiAxisConfig {
     pub rf256_ip: String,
     pub rf256_port: u16,
 
+    pub trid_ip: String,
+    pub trid_port: u16,
+
     pub upper_standa_ip: String,
     pub upper_standa_port: u16,
-    pub upper_standa_id: u8,
+    pub upper_rf256_id: u8,
+    pub upper_trid_id: u8,
 
     pub lower_standa_ip: String,
     pub lower_standa_port: u16,
-    pub lower_standa_id: u8,
+    pub lower_rf256_id: u8,
+    pub lower_trid_id: u8,
 
     pub left_standa_ip: String,
     pub left_standa_port: u16,
-    pub left_standa_id: u8,
+    pub left_rf256_id: u8,
+    pub left_trid_id: u8,
 
     pub right_standa_ip: String,
     pub right_standa_port: u16,
-    pub right_standa_id: u8,
+    pub right_rf256_id: u8,
+    pub right_trid_id: u8,
 }
 
 impl Default for MultiAxisConfig {
@@ -446,20 +548,28 @@ impl Default for MultiAxisConfig {
             rf256_ip: "192.168.0.51".to_string(),
             rf256_port: 60003,
 
+            trid_ip: "192.168.0.51".to_string(),
+            trid_port: 60002,
+
             upper_standa_ip: "192.168.0.204".to_string(),
             upper_standa_port: 2000,
-            upper_standa_id: 6,
+            upper_rf256_id: 6,
+            upper_trid_id: 0,
+
             lower_standa_ip: "192.168.0.204".to_string(),
             lower_standa_port: 3000,
-            lower_standa_id: 15,
+            lower_rf256_id: 15,
+            lower_trid_id: 1,
 
             left_standa_ip: "192.168.0.205".to_string(),
             left_standa_port: 2000,
-            left_standa_id: 5,
+            left_rf256_id: 5,
+            left_trid_id: 2,
 
             right_standa_ip: "192.168.0.205".to_string(),
             right_standa_port: 3000,
-            right_standa_id: 4,
+            right_rf256_id: 4,
+            right_trid_id: 3,
         }
     }
 }

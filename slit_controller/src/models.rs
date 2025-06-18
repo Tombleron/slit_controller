@@ -1,24 +1,23 @@
 use standa::command::state::StateParams;
-use std::fmt;
+use std::{fmt, time::Duration};
 use tokio::sync::oneshot;
 
 pub type CommandResult = Result<CommandResponse, CommandError>;
 
 #[derive(Debug, Clone)]
 pub struct CommandError {
-    pub code: u16,
     pub message: String,
 }
 
 impl From<String> for CommandError {
     fn from(message: String) -> Self {
-        CommandError { code: 500, message }
+        CommandError { message }
     }
 }
 
 impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Error {}: {}", self.code, self.message)
+        write!(f, "Error: {}", self.message)
     }
 }
 
@@ -46,6 +45,9 @@ pub enum CommandResponse {
     Acceleration(u16),
     Deceleration(u16),
     PositionWindow(f32),
+    Moving(bool),
+    TimeLimit(Duration),
+    Temperature(u16),
     Error(String),
 }
 
@@ -56,6 +58,8 @@ pub enum CommandParams {
     Acceleration(u16),
     Deceleration(u16),
     PositionWindow(f32),
+    TimeLimit(Duration),
+    Temperature(u16),
     None,
 }
 
@@ -95,6 +99,9 @@ pub enum AxisProperty {
     Acceleration,
     Deceleration,
     PositionWindow,
+    Moving,
+    TimeLimit,
+    Temperature,
 }
 
 #[derive(Debug)]
@@ -108,12 +115,14 @@ type AxisStateValue<T> = Result<T, String>;
 #[derive(Debug)]
 pub struct AxisState {
     pub position: AxisStateValue<f32>,
+    pub temperature: AxisStateValue<u16>,
     pub state: AxisStateValue<StateParams>,
     pub is_moving: AxisStateValue<bool>,
     pub velocity: AxisStateValue<u32>,
     pub acceleration: AxisStateValue<u16>,
     pub deceleration: AxisStateValue<u16>,
     pub position_window: AxisStateValue<f32>,
+    pub time_limit: AxisStateValue<Duration>,
 }
 
 #[derive(Debug)]

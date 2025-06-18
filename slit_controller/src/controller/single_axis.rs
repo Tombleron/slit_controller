@@ -6,12 +6,14 @@ use std::{
         Arc, Mutex,
     },
     thread::JoinHandle,
+    time::Duration,
 };
 
 use crate::controller::move_thread::MoveThread;
 use rf256::Rf256;
 use standa::{command::state::StateParams, Standa};
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, field::debug, info, warn};
+use trid::Trid;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SingleAxisParams {
@@ -19,6 +21,7 @@ pub struct SingleAxisParams {
     pub deceleration: u16,
     pub velocity: u32,
     pub position_window: f32,
+    pub time_limit: Duration,
 }
 
 impl Default for SingleAxisParams {
@@ -28,14 +31,17 @@ impl Default for SingleAxisParams {
             deceleration: 500,
             velocity: 2000,
             position_window: 0.001,
+            time_limit: Duration::from_secs(60),
         }
     }
 }
 
 pub struct SingleAxis<T: Write + Read + Send + 'static> {
     rf256_id: u8,
+    trid_id: u8,
 
     rf256_client: Arc<Mutex<T>>,
+    trid_client: Arc<Mutex<T>>,
     standa_client: Arc<Mutex<T>>,
 
     params: SingleAxisParams,
@@ -72,18 +78,32 @@ impl<T: Write + Read + Send> SingleAxis<T> {
     pub fn set_position_window(&mut self, position_window: f32) {
         self.params.position_window = position_window;
     }
+
+    pub fn get_time_limit(&self) -> Duration {
+        self.params.time_limit
+    }
+    pub fn set_time_limit(&mut self, time_limit: Duration) {
+        self.params.time_limit = time_limit;
+    }
 }
 
 impl<T: Write + Read + Send> SingleAxis<T> {
-    #[instrument(skip(rf256_client, standa_client), fields(rf256_id = %rf256_id))]
-    pub fn new(rf256_client: Arc<Mutex<T>>, rf256_id: u8, standa_client: Arc<Mutex<T>>) -> Self {
+    pub fn new(
+        rf256_client: Arc<Mutex<T>>,
+        rf256_id: u8,
+        trid_client: Arc<Mutex<T>>,
+        trid_id: u8,
+        standa_client: Arc<Mutex<T>>,
+    ) -> Self {
         info!("Initializing SingleAxis with id {}", rf256_id);
         let params = SingleAxisParams::default();
         debug!("Using default parameters: {:?}", params);
 
         Self {
             rf256_id,
+            trid_id,
             rf256_client,
+            trid_client,
             standa_client,
             params,
             move_thread: None,
@@ -91,7 +111,31 @@ impl<T: Write + Read + Send> SingleAxis<T> {
         }
     }
 
-    #[instrument(skip(self), fields(rf256_id = %self.rf256_id))]
+    pub fn temperature(&self) -> io::Result<u16> {
+        debug("Acquiring lock on TRID client for temperature reading");
+        let mut client = match self.trid_client.lock() {
+            Ok(client) => client,
+            Err(e) => {
+                warn!("Failed to acquire lock on TRID client: {}", e);
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Failed to acquire lock",
+                ));
+            }
+        };
+
+        debug!("Reading temperature from id {}", self.trid_id);
+        let trid = Trid::new(1);
+        let result = trid.read_data(client.deref_mut(), self.trid_id as u16);
+
+        match &result {
+            Ok(temperature) => debug!("Successfully read temperature: {}", temperature),
+            Err(e) => warn!("Failed to read temperature: {}", e),
+        };
+
+        result
+    }
+
     pub fn position(&self) -> io::Result<f32> {
         debug!("Acquiring lock on RF256 client for position reading");
         let mut client = match self.rf256_client.lock() {
@@ -106,6 +150,18 @@ impl<T: Write + Read + Send> SingleAxis<T> {
         };
 
         debug!("Reading position from id {}", self.rf256_id);
+
+        let id = Rf256::new(self.rf256_id).read_id(client.deref_mut())?;
+        if id != self.rf256_id {
+            warn!("RF256 ID mismatch: expected {}, got {}", self.rf256_id, id);
+            client.flush().unwrap_or_else(|e| {
+                warn!("Failed to flush RF256 client: {}", e);
+            });
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("RF256 ID mismatch: expected {}, got {}", self.rf256_id, id),
+            ));
+        }
         let result = Rf256::new(self.rf256_id).read_data(client.deref_mut());
 
         match &result {
@@ -116,14 +172,12 @@ impl<T: Write + Read + Send> SingleAxis<T> {
         result
     }
 
-    #[instrument(skip(self), fields(rf256_id = %self.rf256_id))]
     pub fn is_moving(&self) -> bool {
         let moving = self.moving.load(Ordering::SeqCst);
         debug!("Axis {} is moving: {}", self.rf256_id, moving);
         moving
     }
 
-    #[instrument(skip(self), fields(rf256_id = %self.rf256_id))]
     pub fn state(&self) -> io::Result<StateParams> {
         debug!("Reading state for id {}", self.rf256_id);
         debug!("Acquiring lock on Standa client");
@@ -148,7 +202,6 @@ impl<T: Write + Read + Send> SingleAxis<T> {
         result
     }
 
-    #[instrument(skip(self), fields(rf256_id = %self.rf256_id, velocity = %self.params.velocity, acceleration = %self.params.acceleration, deceleration = %self.params.deceleration))]
     pub fn update_motor_settings(&self) -> io::Result<()> {
         debug!("Updating motor settings for id {}", self.rf256_id);
         debug!("Acquiring lock on Standa client for updating settings");
@@ -190,18 +243,8 @@ impl<T: Write + Read + Send> SingleAxis<T> {
         Ok(())
     }
 
-    #[instrument(skip(self), fields(rf256_id = %self.rf256_id))]
     pub fn stop(&mut self) -> Result<(), String> {
         debug!("Attempting to stop axis {}", self.rf256_id);
-        if !self.moving.load(Ordering::SeqCst) {
-            warn!(
-                "Attempted to stop id {} which is not in motion",
-                self.rf256_id
-            );
-            return Err("Axis is not in motion".to_string());
-        }
-
-        info!("Stopping motion for id {}", self.rf256_id);
 
         Standa::new()
             .stop(
@@ -237,7 +280,6 @@ impl<T: Write + Read + Send> SingleAxis<T> {
         Ok(())
     }
 
-    #[instrument(skip(self), fields(rf256_id = %self.rf256_id, target = %target, position_window = %self.params.position_window))]
     pub fn move_to_position(&mut self, target: f32) -> Result<(), String> {
         debug!(
             "Attempting to move axis {} to position {}",
@@ -262,12 +304,13 @@ impl<T: Write + Read + Send> SingleAxis<T> {
         self.moving.store(true, Ordering::SeqCst);
 
         debug!("Creating MoveThread for axis {}", self.rf256_id);
-        let move_thread = MoveThread::new(
+        let mut move_thread = MoveThread::new(
             Arc::clone(&self.rf256_client),
             Arc::clone(&self.standa_client),
             self.rf256_id,
             target,
             self.params.position_window,
+            self.params.time_limit,
             Arc::clone(&self.moving),
         );
 

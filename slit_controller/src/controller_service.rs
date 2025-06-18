@@ -31,7 +31,6 @@ pub async fn run_controller(
                 // GET commands should not reach the controller
                 // This is an error condition
                 Err(CommandError {
-                    code: 400,
                     message: "GET commands should not be handled by the controller".to_string(),
                 })
             }
@@ -61,8 +60,11 @@ pub async fn run_controller(
                     .set_position_window(axis, window)
                     .map(|_| CommandResponse::Success)
                     .map_err(|e| e.to_string().into()),
+                (AxisProperty::TimeLimit, CommandParams::TimeLimit(limit)) => multi_axis
+                    .set_time_limit(axis, limit)
+                    .map(|_| CommandResponse::Success)
+                    .map_err(|e| e.to_string().into()),
                 _ => Err(CommandError {
-                    code: 400,
                     message: "Invalid parameter for property".to_string(),
                 }),
             },

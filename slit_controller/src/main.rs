@@ -24,11 +24,20 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = slit_controller::config::load_config()?;
-    logging::init(&config);
+    // Check if we should create a default config file
+    if let Ok(create_config) = std::env::var("CREATE_CONFIG") {
+        if create_config == "1" || create_config.to_lowercase() == "true" {
+            info!("Creating default configuration file...");
+            slit_controller::config::save_default_config()?;
+            info!("Default configuration saved. Exiting.");
+            return Ok(());
+        }
+    }
+    let _config = slit_controller::config::load_config()?;
+
+    logging::init();
 
     info!("Starting slit controller...");
-
     let (command_tx, command_rx) = mpsc::channel(100);
 
     let state = Arc::new(Mutex::new(SharedState {

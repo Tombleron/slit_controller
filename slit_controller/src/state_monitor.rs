@@ -21,6 +21,7 @@ pub async fn run_state_monitor(
             let state = multi_axis.state(axis).map_err(|e| e.to_string());
 
             let position = multi_axis.position(axis).map_err(|e| e.to_string());
+            let temperature = multi_axis.temperature(axis).map_err(|e| e.to_string());
             let velocity = multi_axis.get_velocity(axis).map_err(|e| e.to_string());
             let acceleration = multi_axis.get_acceleration(axis).map_err(|e| e.to_string());
             let deceleration = multi_axis.get_deceleration(axis).map_err(|e| e.to_string());
@@ -28,6 +29,9 @@ pub async fn run_state_monitor(
                 .get_position_window(axis)
                 .map_err(|e| e.to_string());
             let is_moving = Ok(multi_axis.is_moving(axis));
+            let time_limit = multi_axis.get_time_limit(axis).map_err(|e| e.to_string());
+            // Droping early to avoid holding the lock longer than necessary
+            drop(multi_axis);
 
             let axis_state = AxisState {
                 position,
@@ -37,6 +41,8 @@ pub async fn run_state_monitor(
                 acceleration,
                 deceleration,
                 position_window,
+                time_limit,
+                temperature,
             };
 
             let mut shared_state = shared_state.lock().await;

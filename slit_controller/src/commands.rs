@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::models::{AxisProperty, Command, CommandEnvelope, CommandParams, CommandResult};
 use tokio::sync::oneshot;
 
@@ -39,6 +41,9 @@ pub fn parse_command(cmd_str: &str) -> Option<(CommandEnvelope, oneshot::Receive
                 "acceleration" => AxisProperty::Acceleration,
                 "deceleration" => AxisProperty::Deceleration,
                 "position_window" => AxisProperty::PositionWindow,
+                "is_moving" => AxisProperty::Moving,
+                "time_limit" => AxisProperty::TimeLimit,
+                "temperature" => AxisProperty::Temperature,
                 _ => return None,
             };
 
@@ -67,6 +72,13 @@ pub fn parse_command(cmd_str: &str) -> Option<(CommandEnvelope, oneshot::Receive
                     (
                         AxisProperty::PositionWindow,
                         CommandParams::PositionWindow(val),
+                    )
+                }
+                "time_limit" => {
+                    let val = parts[3].parse::<u64>().ok()?;
+                    (
+                        AxisProperty::TimeLimit,
+                        CommandParams::TimeLimit(Duration::from_secs(val)),
                     )
                 }
                 _ => return None,

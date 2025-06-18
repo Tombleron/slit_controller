@@ -7,7 +7,8 @@ use tokio::sync::{mpsc, Mutex};
 
 use crate::commands::parse_command;
 use crate::models::{
-    Command, CommandEnvelope, CommandError, CommandResponse, Limit, SharedState, State,
+    AxisProperty, Command, CommandEnvelope, CommandError, CommandResponse, Limit, SharedState,
+    State,
 };
 
 fn state_params_to_state(state_params: &StateParams) -> (State, Limit) {
@@ -40,37 +41,40 @@ async fn handle_get_command(envelop: CommandEnvelope, shared_state: Arc<Mutex<Sh
     let shared_state = shared_state.lock().await;
     let response = if let Some(axis_state) = &shared_state.axes[axis] {
         let respose = match property {
-            crate::models::AxisProperty::Position => {
-                axis_state.position.clone().map(CommandResponse::Position)
-            }
-            crate::models::AxisProperty::State => axis_state
+            AxisProperty::Position => axis_state.position.clone().map(CommandResponse::Position),
+            AxisProperty::State => axis_state
                 .state
                 .clone()
                 .map(|state| CommandResponse::State(state_params_to_state(&state))),
-            crate::models::AxisProperty::Velocity => {
-                axis_state.velocity.clone().map(CommandResponse::Velocity)
-            }
-            crate::models::AxisProperty::Acceleration => axis_state
+            AxisProperty::Velocity => axis_state.velocity.clone().map(CommandResponse::Velocity),
+            AxisProperty::Acceleration => axis_state
                 .acceleration
                 .clone()
                 .map(CommandResponse::Acceleration),
-            crate::models::AxisProperty::Deceleration => axis_state
+            AxisProperty::Deceleration => axis_state
                 .deceleration
                 .clone()
                 .map(CommandResponse::Deceleration),
-            crate::models::AxisProperty::PositionWindow => axis_state
+            AxisProperty::PositionWindow => axis_state
                 .position_window
                 .clone()
                 .map(CommandResponse::PositionWindow),
+            AxisProperty::Moving => axis_state.is_moving.clone().map(CommandResponse::Moving),
+            AxisProperty::TimeLimit => axis_state
+                .time_limit
+                .clone()
+                .map(|time| CommandResponse::TimeLimit(time)),
+            AxisProperty::Temperature => axis_state
+                .temperature
+                .clone()
+                .map(CommandResponse::Temperature),
         };
 
         respose.map_err(|e| CommandError {
-            code: 500,
             message: e.to_string(),
         })
     } else {
         Err(CommandError {
-            code: 404,
             message: format!("Axis {} not found", axis),
         })
     };
@@ -128,25 +132,34 @@ pub async fn run_communication_layer(
                                     let response_str = match response {
                                         CommandResponse::Success => "OK\n".to_string(),
                                         CommandResponse::Position(pos) => {
-                                            format!("Position: {}\n", pos)
+                                            format!("{}\n", pos)
                                         }
                                         CommandResponse::State(state) => {
-                                            format!("State: {:?}\n", state)
+                                            format!("{:?}\n", state)
                                         }
                                         CommandResponse::Velocity(vel) => {
-                                            format!("Velocity: {}\n", vel)
+                                            format!("{}\n", vel)
                                         }
                                         CommandResponse::Acceleration(acc) => {
-                                            format!("Acceleration: {}\n", acc)
+                                            format!("{}\n", acc)
                                         }
                                         CommandResponse::Deceleration(dec) => {
-                                            format!("Deceleration: {}\n", dec)
+                                            format!("{}\n", dec)
                                         }
                                         CommandResponse::PositionWindow(win) => {
-                                            format!("Position Window: {}\n", win)
+                                            format!("{}\n", win)
+                                        }
+                                        CommandResponse::Moving(is_moving) => {
+                                            format!("{}\n", is_moving)
+                                        }
+                                        CommandResponse::TimeLimit(duration) => {
+                                            format!("{}\n", duration.as_secs())
                                         }
                                         CommandResponse::Error(e) => {
                                             format!("Error: {}\n", e)
+                                        }
+                                        CommandResponse::Temperature(temp) => {
+                                            format!("{}\n", temp)
                                         }
                                     };
                                     let _ = socket.write_all(response_str.as_bytes()).await;
