@@ -281,7 +281,7 @@ class SlitController(MotorController):
             return state_value, "", limits
 
     def ReadOne(self, axis: int) -> Any:
-        self.controller.get_position(axis)
+        return self.controller.get_position(axis)
 
     def PreStartOne(self, axis: int, value: float) -> bool:
         if value < self.limits[axis][0] or value > self.limits[axis][1]:
