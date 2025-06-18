@@ -171,9 +171,6 @@ impl MultiAxis {
                 self.config.rf256_ip, self.config.rf256_port
             );
             let mut stream = client.lock().unwrap();
-            stream.shutdown(Shutdown::Both).unwrap_or_else(|e| {
-                warn!("Failed to shutdown RF256 client stream: {}", e);
-            });
             match TcpStream::connect_timeout(
                 &SocketAddr::new(
                     self.config.rf256_ip.parse().unwrap(),
@@ -207,9 +204,6 @@ impl MultiAxis {
                 self.config.trid_ip, self.config.trid_port
             );
             let mut stream = client.lock().unwrap();
-            stream.shutdown(Shutdown::Both).unwrap_or_else(|e| {
-                warn!("Failed to shutdown TRID client stream: {}", e);
-            });
             match TcpStream::connect_timeout(
                 &SocketAddr::new(self.config.trid_ip.parse().unwrap(), self.config.trid_port),
                 Duration::from_secs(1),
@@ -256,12 +250,6 @@ impl MultiAxis {
                 index, ip, port
             );
             let mut stream = client.lock().unwrap();
-            stream.shutdown(Shutdown::Both).unwrap_or_else(|e| {
-                warn!(
-                    "Failed to shutdown Standa client stream at index {}: {}",
-                    index, e
-                );
-            });
             match TcpStream::connect_timeout(
                 &SocketAddr::new(ip.parse().unwrap(), port),
                 Duration::from_secs(1),
