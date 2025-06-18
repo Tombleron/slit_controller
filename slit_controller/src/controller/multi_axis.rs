@@ -478,7 +478,7 @@ impl MultiAxis {
                     "Detected invalid data, attempting to reconnect Standa client for index {}",
                     index
                 );
-                self.reconnect_standa_client(index)?;
+                self.reconnect_rf256_client()?;
             }
         } else if let Ok(pos) = result {
             debug!("Got position {} for axis {}", pos, index);
