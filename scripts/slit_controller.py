@@ -101,12 +101,12 @@ class Slit:
         response = self._send_command(f"get:{axis}:state")
         return StandaState.from_response(response)
 
-    def get_temperature(self, axis: int) -> int:
+    def get_temperature(self, axis: int) -> float:
         """Get the temperature of an axis."""
         response = self._send_command(f"get:{axis}:temperature")
         match = re.search(r'([-+]?\d*\.\d+|\d+)', response)
         if match:
-            return int(match.group(1))
+            return float(match.group(1))
         raise SlitControllerError(f"Failed to parse temperature from response: {response}")
 
     def get_velocity(self, axis: int) -> int:
