@@ -31,7 +31,7 @@ impl Default for SingleAxisParams {
             acceleration: 500,
             deceleration: 500,
             velocity: 2000,
-            position_window: 0.001,
+            position_window: 0.0005,
             time_limit: Duration::from_secs(60),
         }
     }

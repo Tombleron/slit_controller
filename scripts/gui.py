@@ -612,13 +612,24 @@ class MotorControlApp(QMainWindow):
 
         # Create individual control tab
         control_tab = QWidget()
-        control_layout = QHBoxLayout(control_tab)
+        control_layout = QVBoxLayout(control_tab)
+
+        # Create two rows for axis controls
+        top_row_layout = QHBoxLayout()
+        bottom_row_layout = QHBoxLayout()
+
+        control_layout.addLayout(top_row_layout)
+        control_layout.addLayout(bottom_row_layout)
 
         # Create axis control widgets
         self.axis_controls = []
         for i in range(4):  # Assuming 4 axes (0-3)
             axis_control = AxisControlWidget(i, self.controller)
-            control_layout.addWidget(axis_control)
+            # Add axes 0-1 to top row, axes 2-3 to bottom row
+            if i < 2:
+                top_row_layout.addWidget(axis_control)
+            else:
+                bottom_row_layout.addWidget(axis_control)
             self.axis_controls.append(axis_control)
 
         self.tab_widget.addTab(control_tab, "Individual Control")
