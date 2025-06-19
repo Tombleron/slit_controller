@@ -15,7 +15,11 @@ class AxisControlWidget(QGroupBox):
     """Widget for controlling a single motor axis."""
 
     def __init__(self, axis_num, controller, parent=None):
-        super().__init__(f"Axis {axis_num} Control", parent)
+        # Map axis numbers to directional names
+        axis_names = {0: "Up", 1: "Down", 2: "Right", 3: "Left"}
+        axis_name = axis_names.get(axis_num, f"Axis {axis_num}")
+
+        super().__init__(f"{axis_name} Control", parent)
         self.axis_num = axis_num
         self.controller = controller
         self.virtual_zero_offset = 0.0  # Virtual zero offset
