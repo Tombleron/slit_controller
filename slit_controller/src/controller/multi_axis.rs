@@ -480,7 +480,7 @@ impl MultiAxis {
         result
     }
 
-    pub fn temperature(&mut self, index: usize) -> io::Result<u16> {
+    pub fn temperature(&mut self, index: usize) -> io::Result<f32> {
         debug!("Getting temperature for axis {}", index);
         let axis = self.get_axis(index)?;
         let result = axis.temperature();

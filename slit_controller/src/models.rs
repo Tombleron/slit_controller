@@ -47,7 +47,7 @@ pub enum CommandResponse {
     PositionWindow(f32),
     Moving(bool),
     TimeLimit(Duration),
-    Temperature(u16),
+    Temperature(f32),
     Error(String),
 }
 
@@ -115,7 +115,7 @@ type AxisStateValue<T> = Result<T, String>;
 #[derive(Debug)]
 pub struct AxisState {
     pub position: AxisStateValue<f32>,
-    pub temperature: AxisStateValue<u16>,
+    pub temperature: AxisStateValue<f32>,
     pub state: AxisStateValue<StateParams>,
     pub is_moving: AxisStateValue<bool>,
     pub velocity: AxisStateValue<u32>,

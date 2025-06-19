@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use standa::command::state::StateParams;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -96,6 +97,9 @@ pub async fn run_communication_layer(
 
     let listener = tokio::net::UnixListener::bind("/tmp/slit_controller.sock")
         .map_err(|e| anyhow!("Failed to bind to socket: {}", e))?;
+    let permissions = std::fs::Permissions::from_mode(0o666);
+    std::fs::set_permissions("/tmp/slit_controller.sock", permissions)
+        .map_err(|e| anyhow!("Failed to set permissions: {}", e))?;
 
     loop {
         let shared_state = shared_state.clone();

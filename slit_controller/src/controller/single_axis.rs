@@ -112,7 +112,7 @@ impl SingleAxis {
         }
     }
 
-    pub fn temperature(&self) -> io::Result<u16> {
+    pub fn temperature(&self) -> io::Result<f32> {
         debug("Acquiring lock on TRID client for temperature reading");
         let mut client = match self.trid_client.lock() {
             Ok(client) => client,

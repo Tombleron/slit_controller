@@ -89,7 +89,7 @@ impl Trid {
         crc
     }
 
-    pub fn read_data(&self, sender: &mut (impl Write + Read), axis: u16) -> std::io::Result<u16> {
+    pub fn read_data(&self, sender: &mut (impl Write + Read), axis: u16) -> std::io::Result<f32> {
         let result = self.read_holding_register(sender, axis)?;
         if result.len() < 2 {
             return Err(std::io::Error::new(
@@ -98,7 +98,15 @@ impl Trid {
             ));
         }
 
-        let value = ((result[0] as u16) << 8) | (result[1] as u16);
-        Ok(value / 10)
+        let value = (((result[0] as u16) << 8) | (result[1] as u16)) as f32 / 10.0;
+
+        if value < 0.0 || value > 200.0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Temp sensors are missing",
+            ));
+        }
+
+        Ok(value)
     }
 }
