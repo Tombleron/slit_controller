@@ -627,7 +627,7 @@ class MotorControlApp(QMainWindow):
 
         # Create axis control widgets
         self.axis_controls = []
-        for i in range(4):  # Assuming 4 axes (0-3)
+        for i in [0, 1, 3, 2]:  # Assuming 4 axes (0-3)
             axis_control = AxisControlWidget(i, self.controller)
             # Add axes 0-1 to top row, axes 2-3 to bottom row
             if i < 2:
