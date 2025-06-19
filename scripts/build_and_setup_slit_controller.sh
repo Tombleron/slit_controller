@@ -56,6 +56,35 @@ ExecStartPre=/bin/rm -f /tmp/slit_controller.sock
 WantedBy=multi-user.target
 EOF
 
+echo "Creating systemd timer for periodic restart..."
+cat << EOF | sudo tee /etc/systemd/system/slit-controller-restart.timer > /dev/null
+[Unit]
+Description=Restart Slit Controller Service every 5 minutes
+Requires=slit-controller.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Unit=slit-controller-restart.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+echo "Creating systemd restart service..."
+cat << EOF | sudo tee /etc/systemd/system/slit-controller-restart.service > /dev/null
+[Unit]
+Description=Restart Slit Controller Service
+Requires=slit-controller.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart slit-controller.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 echo "Reloading systemd..."
 sudo systemctl daemon-reload
 
@@ -63,6 +92,13 @@ echo "Enabling slit-controller service to start on boot..."
 sudo systemctl enable slit-controller.service
 echo "Starting slit-controller service..."
 sudo systemctl start slit-controller.service
+
+echo "Enabling and starting slit-controller restart timer..."
+sudo systemctl enable slit-controller-restart.timer
+sudo systemctl start slit-controller-restart.timer
+
+echo "Timer status:"
+sudo systemctl status slit-controller-restart.timer
 
 echo ""
 echo "Installation complete!"
@@ -76,3 +112,5 @@ echo ""
 echo "To view logs, run:"
 echo "  sudo journalctl -u slit-controller.service"
 echo "  or check log files in /var/log/slit_controller/"
+echo ""
+echo "The service is configured to automatically restart every 5 minutes."
