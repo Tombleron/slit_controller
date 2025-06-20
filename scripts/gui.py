@@ -309,7 +309,7 @@ class AxisControlWidget(QGroupBox):
                 target = target + self.virtual_zero_offset
 
 
-            self.aply_settings()
+            # self.aply_settings()
             self.controller.move(self.axis_num, target)
 
             # Immediate update to show movement started
