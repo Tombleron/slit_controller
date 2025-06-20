@@ -193,8 +193,8 @@ class Slit:
         """Wait for an axis to stop moving, with timeout in seconds."""
         start_time = time.time()
         while time.time() - start_time < timeout:
-            state = self.get_state(axis)
-            if state.state != 'Moving':
+            is_moving = self.is_moving(axis)
+            if not is_moving:
                 return
             time.sleep(poll_interval)
 

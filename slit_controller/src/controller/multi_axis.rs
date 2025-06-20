@@ -430,10 +430,16 @@ impl MultiAxis {
 
     pub fn move_to_position(&mut self, index: usize, position: f32) -> Result<(), String> {
         debug!("Moving axis {} to position {}", index, position);
+
+        if position < 6.5 && position > 14.0 {
+            return Err("Position is out of bounds, (6.5, 14)".to_string());
+        }
+
         let axis = self.get_axis(index).map_err(|e| {
             error!("Failed to get axis {}: {}", index, e);
             e.to_string()
         })?;
+
         let result = axis.move_to_position(position);
         if let Err(ref e) = result {
             error!(
