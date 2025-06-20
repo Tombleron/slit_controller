@@ -431,7 +431,7 @@ impl MultiAxis {
     pub fn move_to_position(&mut self, index: usize, position: f32) -> Result<(), String> {
         debug!("Moving axis {} to position {}", index, position);
 
-        if position < 6.5 && position > 14.0 {
+        if position < 6.5 || position > 14.0 {
             error!("Move target is out of bounds: {position}");
             return Err("Position is out of bounds, (6.5, 14)".to_string());
         }
