@@ -1,8 +1,5 @@
-pub mod async_client;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use std::io::{Read, Write};
-
-#[derive(Debug, Clone, Copy)]
 pub struct Trid {
     device_id: u8,
 }
@@ -19,9 +16,10 @@ impl Trid {
     pub fn set_device_id(&mut self, device_id: u8) {
         self.device_id = device_id;
     }
-    pub fn read_holding_register(
+
+    pub async fn read_holding_register(
         &self,
-        sender: &mut (impl Write + Read),
+        sender: &mut (impl AsyncWrite + AsyncRead + Unpin),
         register_address: u16,
     ) -> std::io::Result<Vec<u8>> {
         let register_count = 1;
@@ -39,10 +37,10 @@ impl Trid {
         request.push((crc & 0xFF) as u8);
         request.push((crc >> 8) as u8);
 
-        sender.write_all(&request)?;
+        sender.write_all(&request).await?;
 
         let mut response_header = vec![0; 3];
-        sender.read_exact(&mut response_header)?;
+        sender.read_exact(&mut response_header).await?;
 
         if response_header[0] != self.device_id || response_header[1] != 0x03 {
             return Err(std::io::Error::new(
@@ -53,7 +51,7 @@ impl Trid {
 
         let byte_count = response_header[2] as usize;
         let mut response_data = vec![0; byte_count + 2];
-        sender.read_exact(&mut response_data)?;
+        sender.read_exact(&mut response_data).await?;
 
         let mut full_response = response_header.clone();
         full_response.extend_from_slice(&response_data);
@@ -91,8 +89,12 @@ impl Trid {
         crc
     }
 
-    pub fn read_data(&self, sender: &mut (impl Write + Read), axis: u16) -> std::io::Result<f32> {
-        let result = self.read_holding_register(sender, axis)?;
+    pub async fn read_data(
+        &self,
+        sender: &mut (impl AsyncWrite + AsyncRead + Unpin),
+        axis: u16,
+    ) -> std::io::Result<f32> {
+        let result = self.read_holding_register(sender, axis).await?;
         if result.len() < 2 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,

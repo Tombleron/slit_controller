@@ -1,20 +1,21 @@
 use std::{
     io::{self, Read},
-    net::TcpStream,
-    ops::DerefMut as _,
+    ops::DerefMut as _kjj,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc,
     },
     thread::JoinHandle,
     time::Duration,
 };
 
 use crate::controller::move_thread::MoveThread;
-use rf256::Rf256;
-use standa::{command::state::StateParams, Standa};
+use rf256::async_client::Rf256;
+use standa::{async_client::Standa, command::state::StateParams};
+use tokio::sync::Mutex;
+use tokio::{io::AsyncReadExt as _, net::TcpStream};
 use tracing::{debug, error, field::debug, info, warn};
-use trid::Trid;
+use trid::async_client::Trid;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SingleAxisParams {
@@ -112,22 +113,15 @@ impl SingleAxis {
         }
     }
 
-    pub fn temperature(&self) -> io::Result<f32> {
+    pub async fn temperature(&self) -> io::Result<f32> {
         debug("Acquiring lock on TRID client for temperature reading");
-        let mut client = match self.trid_client.lock() {
-            Ok(client) => client,
-            Err(e) => {
-                warn!("Failed to acquire lock on TRID client: {}", e);
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "Failed to acquire lock",
-                ));
-            }
-        };
+        let mut client = self.trid_client.lock().await;
 
         debug!("Reading temperature from id {}", self.trid_id);
         let trid = Trid::new(1);
-        let result = trid.read_data(client.deref_mut(), self.trid_id as u16);
+        let result = trid
+            .read_data(client.deref_mut(), self.trid_id as u16)
+            .await;
 
         match &result {
             Ok(temperature) => debug!("Successfully read temperature: {}", temperature),
@@ -137,10 +131,10 @@ impl SingleAxis {
         result
     }
 
-    pub fn position_with_retries(&self, retries: u8) -> io::Result<f32> {
+    pub async fn position_with_retries(&self, retries: u8) -> io::Result<f32> {
         let mut attempts = 0;
         loop {
-            match self.position() {
+            match self.position().await {
                 Ok(position) => return Ok(position),
                 Err(e) if attempts < retries => {
                     warn!("Failed to read position (attempt {}): {}", attempts + 1, e);
@@ -154,32 +148,27 @@ impl SingleAxis {
         }
     }
 
-    pub fn position(&self) -> io::Result<f32> {
+    pub async fn position(&self) -> io::Result<f32> {
         debug!("Acquiring lock on RF256 client for position reading");
-        let mut client = match self.rf256_client.lock() {
-            Ok(client) => client,
-            Err(e) => {
-                warn!("Failed to acquire lock on RF256 client: {}", e);
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "Failed to acquire lock",
-                ));
-            }
-        };
+        let mut client = self.rf256_client.lock().await;
 
         debug!("Reading position from id {}", self.rf256_id);
 
-        let id = Rf256::new(self.rf256_id).read_id(client.deref_mut())?;
+        let id = Rf256::new(self.rf256_id)
+            .read_id(client.deref_mut())
+            .await?;
         if id != self.rf256_id {
             warn!("RF256 ID mismatch: expected {}, got {}", self.rf256_id, id);
 
             {
                 let mut buf = [0; 1024];
-                let _content_in_buffer = client.deref_mut().read(&mut buf);
+                let _content_in_buffer = client.deref_mut().read(&mut buf).await;
             }
 
             // fetch new id
-            let new_id = Rf256::new(self.rf256_id).read_id(client.deref_mut())?;
+            let new_id = Rf256::new(self.rf256_id)
+                .read_id(client.deref_mut())
+                .await?;
 
             if new_id != self.rf256_id {
                 return Err(io::Error::new(
@@ -188,7 +177,9 @@ impl SingleAxis {
                 ));
             }
         }
-        let result = Rf256::new(self.rf256_id).read_data(client.deref_mut());
+        let result = Rf256::new(self.rf256_id)
+            .read_data(client.deref_mut())
+            .await;
 
         match &result {
             Ok(position) => debug!("Successfully read position: {}", position),
@@ -199,26 +190,17 @@ impl SingleAxis {
     }
 
     pub fn is_moving(&self) -> bool {
-        let moving = self.moving.load(Ordering::SeqCst);
+        let moving = self.moving.load(Ordering::Relaxed);
         debug!("Axis {} is moving: {}", self.rf256_id, moving);
         moving
     }
 
-    pub fn state(&self) -> io::Result<StateParams> {
+    pub async fn state(&self) -> io::Result<StateParams> {
         debug!("Reading state for id {}", self.rf256_id);
         debug!("Acquiring lock on Standa client");
-        let mut client = match self.standa_client.lock() {
-            Ok(client) => client,
-            Err(e) => {
-                warn!("Failed to acquire lock on Standa client: {}", e);
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "Failed to acquire lock",
-                ));
-            }
-        };
+        let mut client = self.standa_client.lock().await;
 
-        let result = Standa::new().get_state(client.deref_mut());
+        let result = Standa::new().get_state(client.deref_mut()).await;
 
         match &result {
             Ok(_state) => debug!("Successfully read state for id {}", self.rf256_id),
@@ -228,36 +210,36 @@ impl SingleAxis {
         result
     }
 
-    pub fn update_motor_settings(&self) -> io::Result<()> {
+    pub async fn update_motor_settings(&self) -> io::Result<()> {
         debug!("Updating motor settings for id {}", self.rf256_id);
         debug!("Acquiring lock on Standa client for updating settings");
-        let mut client = match self.standa_client.lock() {
-            Ok(client) => client,
-            Err(e) => {
-                warn!("Failed to acquire lock on Standa client: {}", e);
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "Failed to acquire lock",
-                ));
-            }
-        };
+        let mut client = self.standa_client.lock().await;
 
         let standa = Standa::new();
 
         debug!("Setting velocity to {}", self.params.velocity);
-        if let Err(e) = standa.set_velocity(client.deref_mut(), self.params.velocity) {
+        if let Err(e) = standa
+            .set_velocity(client.deref_mut(), self.params.velocity)
+            .await
+        {
             warn!("Failed to set velocity: {}", e);
             return Err(e);
         }
 
         debug!("Setting acceleration to {}", self.params.acceleration);
-        if let Err(e) = standa.set_acceleration(client.deref_mut(), self.params.acceleration) {
+        if let Err(e) = standa
+            .set_acceleration(client.deref_mut(), self.params.acceleration)
+            .await
+        {
             warn!("Failed to set acceleration: {}", e);
             return Err(e);
         }
 
         debug!("Setting deceleration to {}", self.params.deceleration);
-        if let Err(e) = standa.set_deceleration(client.deref_mut(), self.params.deceleration) {
+        if let Err(e) = standa
+            .set_deceleration(client.deref_mut(), self.params.deceleration)
+            .await
+        {
             warn!("Failed to set deceleration: {}", e);
             return Err(e);
         }
@@ -269,25 +251,18 @@ impl SingleAxis {
         Ok(())
     }
 
-    pub fn stop(&mut self) -> Result<(), String> {
+    pub async fn stop(&mut self) -> Result<(), String> {
         debug!("Attempting to stop axis {}", self.rf256_id);
 
         Standa::new()
-            .stop(
-                self.standa_client
-                    .lock()
-                    .map_err(|e| {
-                        warn!("Failed to acquire lock on Standa client: {}", e);
-                        "Failed to acquire lock".to_string()
-                    })?
-                    .deref_mut(),
-            )
+            .stop(self.standa_client.lock().await.deref_mut())
+            .await
             .map_err(|e| {
                 warn!("Failed to stop axis {}: {}", self.rf256_id, e);
                 format!("Failed to stop axis {}: {}", self.rf256_id, e)
             })?;
 
-        self.moving.store(false, Ordering::SeqCst);
+        self.moving.store(false, Ordering::Relaxed);
 
         if let Some(handle) = self.move_thread.take() {
             debug!("Joining move thread for id {}", self.rf256_id);
@@ -306,12 +281,12 @@ impl SingleAxis {
         Ok(())
     }
 
-    pub fn move_to_position(&mut self, target: f32) -> Result<(), String> {
+    pub async fn move_to_position(&mut self, target: f32) -> Result<(), String> {
         debug!(
             "Attempting to move axis {} to position {}",
             self.rf256_id, target
         );
-        if self.moving.load(Ordering::SeqCst) {
+        if self.moving.load(Ordering::Relaxed) {
             warn!(
                 "Attempted to move id {} which is already in motion",
                 self.rf256_id
@@ -321,13 +296,13 @@ impl SingleAxis {
 
         info!("Moving id {} to position {}", self.rf256_id, target);
         debug!("Updating motor settings before movement");
-        self.update_motor_settings().map_err(|e| {
+        self.update_motor_settings().await.map_err(|e| {
             warn!("Failed to update motor settings: {}", e);
             format!("Failed to update motor settings: {}", e)
         })?;
 
         debug!("Setting moving flag to true");
-        self.moving.store(true, Ordering::SeqCst);
+        self.moving.store(true, Ordering::Relaxed);
 
         debug!("Creating MoveThread for axis {}", self.rf256_id);
         let mut move_thread = MoveThread::new(

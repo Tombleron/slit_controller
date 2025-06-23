@@ -3,6 +3,10 @@
 */target/
 **/*.rs.bk
 
+# Python artifacts (pycache)
+*.pyc
+**/__pycache__/
+
 # Keep workspace Cargo.lock, but ignore it in individual crates
 /Cargo.lock
 
@@ -16,4 +20,3 @@
 *.log
 logs/
 EOF
-   

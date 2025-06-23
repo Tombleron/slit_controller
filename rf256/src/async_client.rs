@@ -1,18 +1,6 @@
-pub mod async_client;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use bitflags::bitflags;
-use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
-
-bitflags! {
-    #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-    #[serde(transparent)]
-    pub struct State: u8 {
-        const enabled = 0x01;
-        const parity = 0x02;
-        const encder = 0x04;
-    }
-}
+use crate::State;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Rf256 {
@@ -42,9 +30,9 @@ impl Rf256 {
         raw_value as f32 / 10000.0
     }
 
-    fn send_command(
+    async fn send_command(
         &self,
-        sender: &mut impl Write,
+        sender: &mut (impl AsyncWrite + Unpin),
         command: u8,
         msg: Option<&[u8]>,
     ) -> std::io::Result<()> {
@@ -60,19 +48,19 @@ impl Rf256 {
             }
         }
 
-        sender.write_all(&packet)?;
+        sender.write_all(&packet).await?;
 
         Ok(())
     }
 
-    pub fn read_response(
+    pub async fn read_response(
         &self,
-        sender: &mut impl Read,
+        sender: &mut (impl AsyncRead + Unpin),
         expected_len: usize,
     ) -> std::io::Result<Vec<u8>> {
         let mut raw = vec![0; expected_len * 2];
 
-        match sender.read_exact(&mut raw) {
+        match sender.read_exact(&mut raw).await {
             Ok(_) => {}
             Err(e) => return Err(e),
         }
@@ -83,7 +71,7 @@ impl Rf256 {
         for chunk in raw.chunks(2) {
             if chunk.len() != 2 || chunk[0] & 0x80 == 0 || chunk[1] & 0x80 == 0 {
                 let mut buf = vec![0; 256];
-                let _ = sender.read_to_end(&mut buf);
+                let _ = sender.read_to_end(&mut buf).await;
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "Invalid response format",
@@ -104,7 +92,7 @@ impl Rf256 {
         // all counters must be the same
         if !counters.windows(2).all(|w| w[0] == w[1]) {
             let mut buf = vec![0; 256];
-            let _ = sender.read_to_end(&mut buf);
+            let _ = sender.read_to_end(&mut buf).await;
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Counters do not match",
@@ -114,67 +102,89 @@ impl Rf256 {
         Ok(decoded)
     }
 
-    pub fn read_data(&self, sender: &mut (impl Write + Read)) -> std::io::Result<f32> {
-        self.send_command(sender, 0x06, None)?;
-        let response = self.read_response(sender, 4)?;
+    pub async fn read_data(
+        &self,
+        sender: &mut (impl AsyncRead + AsyncWrite + Unpin),
+    ) -> std::io::Result<f32> {
+        self.send_command(sender, 0x06, None).await?;
+        let response = self.read_response(sender, 4).await?;
 
         Ok(self.convert_bytes_to_float(&response))
     }
 
-    fn read_parameter(
+    async fn read_parameter(
         &self,
-        sender: &mut (impl Write + Read),
+        sender: &mut (impl AsyncRead + AsyncWrite + Unpin),
         parameter: u8,
     ) -> std::io::Result<u8> {
-        self.send_command(sender, 0x02, Some(&[parameter]))?;
+        self.send_command(sender, 0x02, Some(&[parameter])).await?;
 
-        let response = self.read_response(sender, 1)?;
+        let response = self.read_response(sender, 1).await?;
 
         Ok(response[0])
     }
 
-    fn write_parameter(
+    async fn write_parameter(
         &self,
-        sender: &mut (impl Write + Read),
+        sender: &mut (impl AsyncRead + AsyncWrite + Unpin),
         parameter: u8,
         value: u8,
     ) -> std::io::Result<()> {
-        self.send_command(sender, 0x03, Some(&[parameter, value]))?;
+        self.send_command(sender, 0x03, Some(&[parameter, value]))
+            .await?;
         Ok(())
     }
 
-    pub fn read_state(&self, sender: &mut (impl Write + Read)) -> std::io::Result<State> {
-        let value = self.read_parameter(sender, 0x00)?;
+    pub async fn read_state(
+        &self,
+        sender: &mut (impl AsyncRead + AsyncWrite + Unpin),
+    ) -> std::io::Result<State> {
+        let value = self.read_parameter(sender, 0x00).await?;
 
         bincode::deserialize::<State>(&[value])
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
-    pub fn read_id(&self, sender: &mut (impl Write + Read)) -> std::io::Result<u8> {
-        self.read_parameter(sender, 0x02)
-    }
-
-    pub fn set_id(&self, sender: &mut (impl Write + Read), id: u8) -> std::io::Result<()> {
-        self.write_parameter(sender, 0x02, id)
-    }
-
-    pub fn read_baudrate(&self, sender: &mut (impl Write + Read)) -> std::io::Result<u32> {
-        self.read_parameter(sender, 0x03).map(|v| v as u32 * 2400)
-    }
-
-    pub fn set_baudrate(
+    pub async fn read_id(
         &self,
-        sender: &mut (impl Write + Read),
+        sender: &mut (impl AsyncRead + AsyncWrite + Unpin),
+    ) -> std::io::Result<u8> {
+        self.read_parameter(sender, 0x02).await
+    }
+
+    pub async fn set_id(
+        &self,
+        sender: &mut (impl AsyncRead + AsyncWrite + Unpin),
+        id: u8,
+    ) -> std::io::Result<()> {
+        self.write_parameter(sender, 0x02, id).await
+    }
+
+    pub async fn read_baudrate(
+        &self,
+        sender: &mut (impl AsyncRead + AsyncWrite + Unpin),
+    ) -> std::io::Result<u32> {
+        self.read_parameter(sender, 0x03)
+            .await
+            .map(|v| v as u32 * 2400)
+    }
+
+    pub async fn set_baudrate(
+        &self,
+        sender: &mut (impl AsyncRead + AsyncWrite + Unpin),
         baudrate: u32,
     ) -> std::io::Result<()> {
         let value = (baudrate / 2400) as u8;
-        self.write_parameter(sender, 0x03, value)
+        self.write_parameter(sender, 0x03, value).await
     }
 
-    pub fn save_to_flash(&self, sender: &mut (impl Write + Read)) -> std::io::Result<()> {
-        self.send_command(sender, 0x04, Some(&[0xAA]))?;
+    pub async fn save_to_flash(
+        &self,
+        sender: &mut (impl AsyncRead + AsyncWrite + Unpin),
+    ) -> std::io::Result<()> {
+        self.send_command(sender, 0x04, Some(&[0xAA])).await?;
 
-        let response = self.read_response(sender, 1)?;
+        let response = self.read_response(sender, 1).await?;
 
         if response.is_empty() || response[0] != 0xAA {
             return Err(std::io::Error::new(

@@ -1,3 +1,5 @@
+#![allow(async_fn_in_trait)]
+
 pub mod home;
 pub mod r#move;
 pub mod state;
@@ -9,6 +11,7 @@ use std::{
 
 use bincode::deserialize;
 use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 fn crc16(pbuf: &[u8]) -> u16 {
     let mut crc: u16 = 0xffff;
@@ -64,6 +67,15 @@ pub trait StandaCommand<'a, const RESERVED: usize = 0, const CRC: bool = true>:
         let bytes = self.as_bytes(Self::CMD_NAME);
 
         Self::send_raw(sender, &bytes, 0).map(|_| ())
+    }
+
+    async fn send_async(
+        &self,
+        sender: &mut (impl AsyncWrite + AsyncRead + Unpin),
+    ) -> io::Result<()> {
+        let bytes = self.as_bytes(Self::CMD_NAME);
+
+        Self::send_raw_async(sender, &bytes, 0).await.map(|_| ())
     }
 
     fn send_raw(
@@ -129,6 +141,69 @@ pub trait StandaCommand<'a, const RESERVED: usize = 0, const CRC: bool = true>:
         Ok(payload.to_vec())
     }
 
+    async fn send_raw_async(
+        sender: &mut (impl AsyncWrite + AsyncRead + Unpin),
+        bytes: &[u8],
+        payload_size: usize,
+    ) -> io::Result<Vec<u8>> {
+        sender.write_all(bytes).await?;
+
+        // Eat all zeros
+        let mut cmd_name_buffer = vec![0; 4];
+
+        while cmd_name_buffer[0] == 0 {
+            match sender.read_exact(&mut cmd_name_buffer[..1]).await {
+                Ok(_) => {}
+                // Sync on timeout
+                Err(e) if e.kind() == ErrorKind::TimedOut => {
+                    return Err(Self::synchronization_async(sender).await.unwrap_err());
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+        }
+
+        // Read rest
+        match sender.read_exact(&mut cmd_name_buffer[1..]).await {
+            Ok(_) => {}
+            Err(e) if e.kind() == ErrorKind::TimedOut => {
+                return Err(Self::synchronization_async(sender).await.unwrap_err())
+            }
+            Err(e) => return Err(e),
+        }
+
+        // Check command name
+        if cmd_name_buffer != bytes[0..4] {
+            return Err(Self::synchronization_async(sender).await.unwrap_err());
+        }
+
+        if payload_size == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Read payload + CRC
+        let mut payload = vec![0; payload_size + 2];
+        match sender.read_exact(&mut payload).await {
+            Ok(_) => {}
+            Err(e) if e.kind() == ErrorKind::TimedOut => {
+                return Err(Self::synchronization_async(sender).await.unwrap_err())
+            }
+            Err(e) => return Err(e),
+        }
+
+        // Check CRC
+        let (payload, crc) = payload.split_at(payload_size);
+        let calculated_crc = crc16(payload);
+        let received_crc = u16::from_le_bytes([crc[0], crc[1]]);
+
+        if calculated_crc != received_crc {
+            return Err(Error::new(ErrorKind::InvalidData, "CRC mismatch"));
+        }
+
+        Ok(payload.to_vec())
+    }
+
     fn synchronization(sender: &mut (impl Write + Read)) -> io::Result<()> {
         'outer: for _ in 0..3 {
             sender.flush()?;
@@ -144,6 +219,34 @@ pub trait StandaCommand<'a, const RESERVED: usize = 0, const CRC: bool = true>:
                         }
                     }
                     Err(e) if e.kind() == ErrorKind::TimedOut => continue 'outer,
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+
+        Err(Error::new(
+            ErrorKind::HostUnreachable,
+            "Device is unreachable or not responding",
+        ))
+    }
+
+    async fn synchronization_async(
+        sender: &mut (impl AsyncWrite + AsyncRead + Unpin),
+    ) -> io::Result<()> {
+        for _ in 0..3 {
+            sender.flush().await?;
+
+            sender.write_all(&[0; 64]).await?;
+
+            for _ in 0..64 {
+                let mut buf = [0; 1];
+                match sender.read_exact(&mut buf).await {
+                    Ok(_) => {
+                        if buf[0] == 0 {
+                            return Err(Error::other("Synchronized with device"));
+                        }
+                    }
+                    Err(e) if e.kind() == ErrorKind::TimedOut => continue,
                     Err(e) => return Err(e),
                 }
             }
@@ -184,10 +287,41 @@ where
         Ok(response)
     }
 
+    async fn get_async(sender: &mut (impl AsyncWrite + AsyncRead + Unpin)) -> io::Result<Self>
+    where
+        Self: for<'de> Deserialize<'de>,
+    {
+        let name = Self::GET_CMD_NAME.as_bytes();
+
+        let payload = Self::send_raw_async(sender, name, Self::SIZE).await?;
+
+        let (data, _) = payload.split_at(size_of::<Self>());
+
+        let response = deserialize::<Self>(data).map_err(|_e| {
+            Error::new(
+                ErrorKind::InvalidData,
+                "failed to parse response from serial port.",
+            )
+        })?;
+
+        Ok(response)
+    }
+
     fn set(&self, sender: &mut (impl Write + Read)) -> io::Result<()> {
         let bytes = self.as_bytes(Self::SET_CMD_NAME);
 
         Self::send_raw(sender, &bytes, 0)?;
+
+        Ok(())
+    }
+
+    async fn set_async(
+        &self,
+        sender: &mut (impl AsyncWrite + AsyncRead + Unpin),
+    ) -> io::Result<()> {
+        let bytes = self.as_bytes(Self::SET_CMD_NAME);
+
+        Self::send_raw_async(sender, &bytes, 0).await?;
 
         Ok(())
     }

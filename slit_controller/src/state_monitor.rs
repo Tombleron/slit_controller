@@ -18,18 +18,34 @@ pub async fn run_state_monitor(
         for axis in 0..4 {
             let mut multi_axis = multi_axis_controller.lock().await;
 
-            let state = multi_axis.state(axis).map_err(|e| e.to_string());
+            let state = multi_axis.state(axis).await.map_err(|e| e.to_string());
 
-            let position = multi_axis.position(axis).map_err(|e| e.to_string());
-            let temperature = multi_axis.temperature(axis).map_err(|e| e.to_string());
-            let velocity = multi_axis.get_velocity(axis).map_err(|e| e.to_string());
-            let acceleration = multi_axis.get_acceleration(axis).map_err(|e| e.to_string());
-            let deceleration = multi_axis.get_deceleration(axis).map_err(|e| e.to_string());
+            let position = multi_axis.position(axis).await.map_err(|e| e.to_string());
+            let temperature = multi_axis
+                .temperature(axis)
+                .await
+                .map_err(|e| e.to_string());
+            let velocity = multi_axis
+                .get_velocity(axis)
+                .await
+                .map_err(|e| e.to_string());
+            let acceleration = multi_axis
+                .get_acceleration(axis)
+                .await
+                .map_err(|e| e.to_string());
+            let deceleration = multi_axis
+                .get_deceleration(axis)
+                .await
+                .map_err(|e| e.to_string());
             let position_window = multi_axis
                 .get_position_window(axis)
+                .await
                 .map_err(|e| e.to_string());
-            let is_moving = Ok(multi_axis.is_moving(axis));
-            let time_limit = multi_axis.get_time_limit(axis).map_err(|e| e.to_string());
+            let is_moving = Ok(multi_axis.is_moving(axis).await);
+            let time_limit = multi_axis
+                .get_time_limit(axis)
+                .await
+                .map_err(|e| e.to_string());
             // Droping early to avoid holding the lock longer than necessary
             drop(multi_axis);
 

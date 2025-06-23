@@ -18,10 +18,12 @@ pub async fn run_controller(
         let result = match command {
             Command::Move { axis, position } => multi_axis
                 .move_to_position(axis, position)
+                .await
                 .map(|_| CommandResponse::Success)
                 .map_err(|e| e.to_string().into()),
             Command::Stop { axis } => multi_axis
                 .stop(axis)
+                .await
                 .map(|_| CommandResponse::Success)
                 .map_err(|e| e.to_string().into()),
             Command::Get {
@@ -42,26 +44,31 @@ pub async fn run_controller(
             } => match (property, value) {
                 (AxisProperty::Velocity, CommandParams::Velocity(velocity)) => multi_axis
                     .set_velocity(axis, velocity)
+                    .await
                     .map(|_| CommandResponse::Success)
                     .map_err(|e| e.to_string().into()),
                 (AxisProperty::Acceleration, CommandParams::Acceleration(acceleration)) => {
                     multi_axis
                         .set_acceleration(axis, acceleration)
+                        .await
                         .map(|_| CommandResponse::Success)
                         .map_err(|e| e.to_string().into())
                 }
                 (AxisProperty::Deceleration, CommandParams::Deceleration(deceleration)) => {
                     multi_axis
                         .set_deceleration(axis, deceleration)
+                        .await
                         .map(|_| CommandResponse::Success)
                         .map_err(|e| e.to_string().into())
                 }
                 (AxisProperty::PositionWindow, CommandParams::PositionWindow(window)) => multi_axis
                     .set_position_window(axis, window)
+                    .await
                     .map(|_| CommandResponse::Success)
                     .map_err(|e| e.to_string().into()),
                 (AxisProperty::TimeLimit, CommandParams::TimeLimit(limit)) => multi_axis
                     .set_time_limit(axis, limit)
+                    .await
                     .map(|_| CommandResponse::Success)
                     .map_err(|e| e.to_string().into()),
                 _ => Err(CommandError {

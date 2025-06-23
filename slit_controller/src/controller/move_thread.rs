@@ -3,20 +3,21 @@ use std::{
     ops::DerefMut as _,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc,
     },
     time::{Duration, Instant},
 };
 
-use rf256::Rf256;
-use standa::{command::state::StateParams, Standa};
+use rf256::async_client::Rf256;
+use standa::{async_client::Standa, command::state::StateParams};
+use tokio::{io::AsyncReadExt as _, net::TcpStream, sync::Mutex};
 use tracing::{error, info, instrument, warn};
 
 const STEPS_PER_MM: u32 = 800;
 
-pub struct MoveThread<T: Write + Read + Send> {
-    rf256_client: Arc<Mutex<T>>,
-    standa_client: Arc<Mutex<T>>,
+pub struct MoveThread {
+    rf256_client: Arc<Mutex<TcpStream>>,
+    standa_client: Arc<Mutex<TcpStream>>,
 
     rf256: Rf256,
     standa: Standa,
@@ -31,10 +32,10 @@ pub struct MoveThread<T: Write + Read + Send> {
     start_time: Instant,
 }
 
-impl<T: Write + Read + Send> MoveThread<T> {
+impl MoveThread {
     pub fn new(
-        rf256_client: Arc<Mutex<T>>,
-        standa_client: Arc<Mutex<T>>,
+        rf256_client: Arc<Mutex<TcpStream>>,
+        standa_client: Arc<Mutex<TcpStream>>,
         rf256_id: u8,
         target_position: f32,
         position_window: f32,
@@ -63,10 +64,10 @@ impl<T: Write + Read + Send> MoveThread<T> {
         }
     }
 
-    fn position(&self) -> io::Result<f32> {
-        let mut client = self.rf256_client.lock().unwrap();
+    async fn position(&self) -> io::Result<f32> {
+        let mut client = self.rf256_client.lock().await;
 
-        let id = self.rf256.read_id(client.deref_mut())?;
+        let id = self.rf256.read_id(client.deref_mut()).await?;
         if id != self.rf256.get_device_id() {
             warn!(
                 "RF256 ID mismatch: expected {}, got {}",
@@ -76,11 +77,11 @@ impl<T: Write + Read + Send> MoveThread<T> {
 
             {
                 let mut buf = [0; 1024];
-                let _content_in_buffer = client.deref_mut().read(&mut buf);
+                let _content_in_buffer = client.deref_mut().read(&mut buf).await;
             }
 
             // fetch new id
-            let new_id = self.rf256.read_id(client.deref_mut())?;
+            let new_id = self.rf256.read_id(client.deref_mut()).await?;
 
             if new_id != self.rf256.get_device_id() {
                 return Err(io::Error::new(
@@ -93,15 +94,15 @@ impl<T: Write + Read + Send> MoveThread<T> {
                 ));
             }
         }
-        let result = self.rf256.read_data(client.deref_mut());
+        let result = self.rf256.read_data(client.deref_mut()).await;
 
         result
     }
 
-    fn position_with_retries(&self, retries: u8) -> io::Result<f32> {
+    async fn position_with_retries(&self, retries: u8) -> io::Result<f32> {
         let mut attempts = 0;
         loop {
-            match self.position() {
+            match self.position().await {
                 Ok(position) => return Ok(position),
                 Err(e) if attempts < retries => {
                     warn!("Failed to read position (attempt {}): {}", attempts + 1, e);
@@ -116,7 +117,7 @@ impl<T: Write + Read + Send> MoveThread<T> {
     }
 
     fn is_moving(&self) -> bool {
-        let moving = self.moving.load(Ordering::SeqCst);
+        let moving = self.moving.load(Ordering::Relaxed);
         moving
     }
 
@@ -133,37 +134,39 @@ impl<T: Write + Read + Send> MoveThread<T> {
         exceeded
     }
 
-    fn get_state(&self) -> io::Result<StateParams> {
-        let mut client = self.standa_client.lock().unwrap();
-        let result = self.standa.get_state(client.deref_mut());
+    async fn get_state(&self) -> io::Result<StateParams> {
+        let mut client = self.standa_client.lock().await;
+        let result = self.standa.get_state(client.deref_mut()).await;
         if let Err(ref e) = result {
             error!(error = %e, "Failed to get Standa state");
         }
         result
     }
 
-    fn stop(&self) -> io::Result<()> {
-        let mut client = self.standa_client.lock().unwrap();
-        let result = self.standa.stop(client.deref_mut());
+    async fn stop(&self) -> io::Result<()> {
+        let mut client = self.standa_client.lock().await;
+        let result = self.standa.stop(client.deref_mut()).await;
         if let Err(ref e) = result {
             error!(error = %e, "Failed to stop Standa movement");
         }
         result
     }
 
-    fn send_steps(&self, steps: i32, sub_steps: i16) -> io::Result<()> {
+    async fn send_steps(&self, steps: i32, sub_steps: i16) -> io::Result<()> {
         info!(steps, sub_steps, "Sending move command to Standa");
-        let mut client = self.standa_client.lock().unwrap();
+        let mut client = self.standa_client.lock().await;
         let result = self
             .standa
-            .move_relative(client.deref_mut(), steps, sub_steps);
+            .move_relative(client.deref_mut(), steps, sub_steps)
+            .await;
+
         if let Err(ref e) = result {
             error!(error = %e, "Failed to send steps to Standa");
         }
         result
     }
 
-    fn move_relative(&self, error: f32) -> io::Result<()> {
+    async fn move_relative(&self, error: f32) -> io::Result<()> {
         let (steps, sub_steps) = if error.abs() == 0.0 {
             (0, 0)
         } else if error.abs() < 0.001 {
@@ -173,7 +176,7 @@ impl<T: Write + Read + Send> MoveThread<T> {
             ((error * STEPS_PER_MM as f32) as i32, 0)
         };
 
-        let result = self.send_steps(steps, sub_steps);
+        let result = self.send_steps(steps, sub_steps).await;
         if let Err(ref e) = result {
             error!(error = %e, "Failed to move relative");
             return result;
@@ -181,7 +184,8 @@ impl<T: Write + Read + Send> MoveThread<T> {
 
         // Wait until motion completes or stop is requested
         let mut wait_count = 0;
-        while self.is_moving() && self.get_state()?.is_moving() && !self.time_limit_exceeded() {
+        while self.is_moving() && self.get_state().await?.is_moving() && !self.time_limit_exceeded()
+        {
             wait_count += 1;
             if wait_count % 50 == 0 {
                 // Log every ~500ms
@@ -192,8 +196,7 @@ impl<T: Write + Read + Send> MoveThread<T> {
         Ok(())
     }
 
-    #[instrument(skip(self), fields(target_position, position_window))]
-    pub fn run(&mut self) {
+    pub async fn run(&mut self) {
         info!(
             target_position = self.target_position,
             position_window = self.position_window,
@@ -201,7 +204,7 @@ impl<T: Write + Read + Send> MoveThread<T> {
         );
 
         while self.is_moving() && !self.time_limit_exceeded() {
-            let current_position = match self.position_with_retries(5) {
+            let current_position = match self.position_with_retries(5).await {
                 Ok(pos) => pos,
                 Err(e) => {
                     error!(error = %e, "Error reading position, aborting move thread");
@@ -224,12 +227,12 @@ impl<T: Write + Read + Send> MoveThread<T> {
                 break;
             }
 
-            if let Err(e) = self.move_relative(error) {
+            if let Err(e) = self.move_relative(error).await {
                 error!(error = %e, "Error moving Standa, aborting move thread");
                 return;
             }
 
-            let state = match self.get_state() {
+            let state = match self.get_state().await {
                 Ok(state) => state,
                 Err(e) => {
                     error!(error = %e, "Error getting state, aborting move thread");
@@ -258,17 +261,10 @@ impl<T: Write + Read + Send> MoveThread<T> {
     }
 }
 
-impl<T: Write + Read + Send> Drop for MoveThread<T> {
+impl Drop for MoveThread {
     fn drop(&mut self) {
         info!("Stopping move thread");
-        self.moving.store(false, Ordering::SeqCst);
-
-        info!("Stopping Standa movement");
-        if let Err(e) = self.stop() {
-            error!(error = %e, "Failed to stop Standa movement on drop");
-        } else {
-            info!("Successfully stopped Standa movement on drop");
-        }
+        self.moving.store(false, Ordering::Relaxed);
     }
 }
 

@@ -4,6 +4,7 @@ use command::{
     StandaCommand, StandaGetSetCommand,
 };
 use std::io::{Read, Result, Write};
+pub mod async_client;
 pub mod command;
 
 #[derive(Default)]
