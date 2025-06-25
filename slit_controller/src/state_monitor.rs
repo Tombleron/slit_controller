@@ -18,35 +18,24 @@ pub async fn run_state_monitor(
         for axis in 0..4 {
             let mut multi_axis = multi_axis_controller.lock().await;
 
-            let state = multi_axis.state(axis).map_err(|e| e.to_string());
-
-            let position = multi_axis.position(axis).map_err(|e| e.to_string());
-            let temperature = multi_axis.temperature(axis).map_err(|e| e.to_string());
-            let velocity = multi_axis.get_velocity(axis).map_err(|e| e.to_string());
-            let acceleration = multi_axis.get_acceleration(axis).map_err(|e| e.to_string());
-            let deceleration = multi_axis.get_deceleration(axis).map_err(|e| e.to_string());
-            let position_window = multi_axis
-                .get_position_window(axis)
-                .map_err(|e| e.to_string());
-            let is_moving = Ok(multi_axis.is_moving(axis));
-            let time_limit = multi_axis.get_time_limit(axis).map_err(|e| e.to_string());
-            // Droping early to avoid holding the lock longer than necessary
-            drop(multi_axis);
-
-            let axis_state = AxisState {
-                position,
-                state,
-                is_moving,
-                velocity,
-                acceleration,
-                deceleration,
-                position_window,
-                time_limit,
-                temperature,
+            let axis_state = match multi_axis.get_axis_state(axis) {
+                Ok(state) => state,
+                Err(e) => AxisState {
+                    position: Err(e.to_string()),
+                    temperature: Err(e.to_string()),
+                    state: Err(e.to_string()),
+                    is_moving: Err(e.to_string()),
+                    velocity: Err(e.to_string()),
+                    acceleration: Err(e.to_string()),
+                    deceleration: Err(e.to_string()),
+                    position_window: Err(e.to_string()),
+                    time_limit: Err(e.to_string()),
+                },
             };
 
             let mut shared_state = shared_state.lock().await;
             shared_state.axes[axis] = Some(axis_state);
+            dbg!(&shared_state.axes[axis]);
         }
     }
 }

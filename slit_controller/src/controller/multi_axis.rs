@@ -1,5 +1,5 @@
 use std::io::{self};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -8,6 +8,7 @@ use standa::command::state::StateParams;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::controller::single_axis::SingleAxis;
+use crate::models::AxisState;
 
 pub struct MultiAxis {
     rf256_client: Option<Arc<Mutex<TcpStream>>>,
@@ -171,6 +172,14 @@ impl MultiAxis {
                 self.config.rf256_ip, self.config.rf256_port
             );
             let mut stream = client.lock().unwrap();
+
+            stream.shutdown(Shutdown::Both).map_err(|e| {
+                warn!("Failed to shutdown RF256 client: {}", e);
+                e
+            })?;
+
+            std::thread::sleep(std::time::Duration::from_millis(50));
+
             match TcpStream::connect_timeout(
                 &SocketAddr::new(
                     self.config.rf256_ip.parse().unwrap(),
@@ -204,6 +213,13 @@ impl MultiAxis {
                 self.config.trid_ip, self.config.trid_port
             );
             let mut stream = client.lock().unwrap();
+
+            stream.shutdown(Shutdown::Both).map_err(|e| {
+                warn!("Failed to shutdown TRID client: {}", e);
+                e
+            })?;
+            std::thread::sleep(std::time::Duration::from_millis(50));
+
             match TcpStream::connect_timeout(
                 &SocketAddr::new(self.config.trid_ip.parse().unwrap(), self.config.trid_port),
                 Duration::from_secs(1),
@@ -250,6 +266,14 @@ impl MultiAxis {
                 index, ip, port
             );
             let mut stream = client.lock().unwrap();
+
+            stream.shutdown(Shutdown::Both).map_err(|e| {
+                warn!("Failed to shutdown Standa client at index {}: {}", index, e);
+                e
+            })?;
+
+            std::thread::sleep(std::time::Duration::from_millis(50));
+
             match TcpStream::connect_timeout(
                 &SocketAddr::new(ip.parse().unwrap(), port),
                 Duration::from_secs(1),
@@ -517,6 +541,15 @@ impl MultiAxis {
             debug!("Successfully got state for axis {}", index);
         }
         result
+    }
+
+    pub fn get_axis_state(&mut self, index: usize) -> io::Result<AxisState> {
+        self.get_axis(index)
+            .and_then(|axis| axis.get_axis_state())
+            .map_err(|e| {
+                error!("Failed to get axis state for index {}: {}", index, e);
+                e
+            })
     }
 }
 

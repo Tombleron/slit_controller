@@ -6,11 +6,11 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    thread::JoinHandle,
+    thread::{self, JoinHandle},
     time::Duration,
 };
 
-use crate::controller::move_thread::MoveThread;
+use crate::{controller::move_thread::MoveThread, models::AxisState};
 use rf256::Rf256;
 use standa::{command::state::StateParams, Standa};
 use tracing::{debug, error, field::debug, info, warn};
@@ -358,6 +358,99 @@ impl SingleAxis {
             self.rf256_id, target
         );
         Ok(())
+    }
+
+    pub fn get_axis_state(&self) -> io::Result<AxisState> {
+        debug!("Getting axis state");
+
+        // Clone the necessary Arc<Mutex<>> references
+        let rf256_client = Arc::clone(&self.rf256_client);
+        let trid_client = Arc::clone(&self.trid_client);
+        let standa_client = Arc::clone(&self.standa_client);
+        let rf256_id = self.rf256_id;
+        let trid_id = self.trid_id;
+
+        // Spawn threads with cloned resources instead of capturing self
+        let state_get_handle = thread::spawn(move || {
+            debug!("Thread: reading state");
+            let mut client = match standa_client.lock() {
+                Ok(client) => client,
+                Err(e) => return Err(format!("Failed to acquire lock on Standa client: {}", e)),
+            };
+            Standa::new()
+                .get_state(client.deref_mut())
+                .map_err(|e| e.to_string())
+        });
+
+        let position_get_handle = thread::spawn(move || {
+            debug!("Thread: reading position");
+            let mut attempts = 0;
+            let retries = 3;
+            loop {
+                let mut client = match rf256_client.lock() {
+                    Ok(client) => client,
+                    Err(e) => return Err(format!("Failed to acquire lock on RF256 client: {}", e)),
+                };
+
+                let result = Rf256::new(rf256_id).read_id(client.deref_mut());
+                if let Err(e) = result {
+                    if attempts < retries {
+                        attempts += 1;
+                        continue;
+                    }
+                    return Err(e.to_string());
+                }
+
+                match Rf256::new(rf256_id).read_data(client.deref_mut()) {
+                    Ok(position) => return Ok(position),
+                    Err(e) if attempts < retries => {
+                        attempts += 1;
+                        continue;
+                    }
+                    Err(e) => return Err(e.to_string()),
+                }
+            }
+        });
+
+        let temperature_get_handle = thread::spawn(move || {
+            debug!("Thread: reading temperature");
+            let mut client = match trid_client.lock() {
+                Ok(client) => client,
+                Err(e) => return Err(format!("Failed to acquire lock on TRID client: {}", e)),
+            };
+            let trid = Trid::new(1);
+            trid.read_data(client.deref_mut(), trid_id as u16)
+                .map_err(|e| e.to_string())
+        });
+
+        // Get simple values before joining threads
+        let velocity = Ok(self.get_velocity());
+        let acceleration = Ok(self.get_acceleration());
+        let deceleration = Ok(self.get_deceleration());
+        let position_window = Ok(self.get_position_window());
+        let is_moving = Ok(self.is_moving());
+        let time_limit = Ok(self.get_time_limit());
+
+        // Join threads and collect results
+        let state = state_get_handle.join().expect("State thread panicked");
+        let position = position_get_handle
+            .join()
+            .expect("Position thread panicked");
+        let temperature = temperature_get_handle
+            .join()
+            .expect("Temperature thread panicked");
+
+        Ok(AxisState {
+            position,
+            state,
+            is_moving,
+            velocity,
+            acceleration,
+            deceleration,
+            position_window,
+            time_limit,
+            temperature,
+        })
     }
 }
 
