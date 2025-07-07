@@ -4,13 +4,17 @@ use std::{
     ops::DerefMut as _,
     sync::{
         atomic::{AtomicBool, Ordering},
+        mpsc::Sender,
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::Duration,
 };
 
-use crate::{controller::move_thread::MoveThread, models::AxisState};
+use crate::{
+    command_executor::motor::commands::MotorCommand, controller::move_thread::MoveThread,
+    models::AxisState,
+};
 use rf256::Rf256;
 use standa::{command::state::StateParams, Standa};
 use tracing::{debug, error, field::debug, info, warn};
@@ -30,7 +34,7 @@ impl Default for SingleAxisParams {
         SingleAxisParams {
             acceleration: 500,
             deceleration: 500,
-            velocity: 2000,
+            velocity: 400,
             position_window: 0.0005,
             time_limit: Duration::from_secs(60),
         }
@@ -43,7 +47,7 @@ pub struct SingleAxis {
 
     rf256_client: Arc<Mutex<TcpStream>>,
     trid_client: Arc<Mutex<TcpStream>>,
-    standa_client: Arc<Mutex<TcpStream>>,
+    standa_cs: Sender<MotorCommand>,
 
     params: SingleAxisParams,
 
@@ -94,7 +98,7 @@ impl SingleAxis {
         rf256_id: u8,
         trid_client: Arc<Mutex<TcpStream>>,
         trid_id: u8,
-        standa_client: Arc<Mutex<TcpStream>>,
+        standa_cs: Sender<MotorCommand>,
     ) -> Self {
         info!("Initializing SingleAxis with id {}", rf256_id);
         let params = SingleAxisParams::default();
@@ -105,7 +109,8 @@ impl SingleAxis {
             trid_id,
             rf256_client,
             trid_client,
-            standa_client,
+            standa_cs,
+
             params,
             move_thread: None,
             moving: Arc::new(AtomicBool::new(false)),
@@ -403,7 +408,7 @@ impl SingleAxis {
 
                 match Rf256::new(rf256_id).read_data(client.deref_mut()) {
                     Ok(position) => return Ok(position),
-                    Err(e) if attempts < retries => {
+                    Err(_e) if attempts < retries => {
                         attempts += 1;
                         continue;
                     }

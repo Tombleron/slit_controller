@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use standa::command::state::StateParams;
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::config;
 use crate::controller::single_axis::SingleAxis;
 use crate::models::AxisState;
 
