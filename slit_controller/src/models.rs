@@ -2,6 +2,8 @@ use standa::command::state::StateParams;
 use std::{fmt, time::Duration};
 use tokio::sync::oneshot;
 
+use crate::controller::single_axis::MovementParams;
+
 pub type CommandResult = Result<CommandResponse, CommandError>;
 
 #[derive(Debug, Clone)]
@@ -68,6 +70,7 @@ pub enum Command {
     Move {
         axis: usize,
         position: f32,
+        params: Option<MovementParams>,
     },
     Stop {
         axis: usize,
@@ -76,12 +79,6 @@ pub enum Command {
     Get {
         axis: usize,
         property: AxisProperty,
-    },
-
-    Set {
-        axis: usize,
-        property: AxisProperty,
-        value: CommandParams,
     },
 }
 
@@ -95,12 +92,7 @@ impl Command {
 pub enum AxisProperty {
     Position,
     State,
-    Velocity,
-    Acceleration,
-    Deceleration,
-    PositionWindow,
     Moving,
-    TimeLimit,
     Temperature,
 }
 
@@ -118,11 +110,6 @@ pub struct AxisState {
     pub temperature: AxisStateValue<f32>,
     pub state: AxisStateValue<StateParams>,
     pub is_moving: AxisStateValue<bool>,
-    pub velocity: AxisStateValue<u32>,
-    pub acceleration: AxisStateValue<u16>,
-    pub deceleration: AxisStateValue<u16>,
-    pub position_window: AxisStateValue<f32>,
-    pub time_limit: AxisStateValue<Duration>,
 }
 
 #[derive(Debug)]

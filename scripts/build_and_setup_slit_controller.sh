@@ -59,12 +59,12 @@ EOF
 echo "Creating systemd timer for periodic restart..."
 cat << EOF | sudo tee /etc/systemd/system/slit-controller-restart.timer > /dev/null
 [Unit]
-Description=Restart Slit Controller Service every 5 minutes
+Description=Restart Slit Controller Service every 10 minutes
 Requires=slit-controller.service
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=5min
+OnBootSec=10min
+OnUnitActiveSec=10min
 Unit=slit-controller-restart.service
 
 [Install]
@@ -113,4 +113,4 @@ echo "To view logs, run:"
 echo "  sudo journalctl -u slit-controller.service"
 echo "  or check log files in /var/log/slit_controller/"
 echo ""
-echo "The service is configured to automatically restart every 5 minutes."
+echo "The service is configured to automatically restart every 10 minutes."

@@ -10,6 +10,8 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::controller::single_axis::SingleAxis;
 use crate::models::AxisState;
 
+use super::single_axis::MovementParams;
+
 pub struct MultiAxis {
     rf256_client: Option<Arc<Mutex<TcpStream>>>,
     trid_client: Option<Arc<Mutex<TcpStream>>>,
@@ -327,115 +329,6 @@ impl MultiAxis {
         Ok(self.axes[index].as_mut().unwrap())
     }
 
-    pub fn get_velocity(&mut self, index: usize) -> io::Result<u32> {
-        debug!("Getting velocity for axis {}", index);
-        let axis = self.get_axis(index)?;
-        let velocity = axis.get_velocity();
-        debug!("Got velocity {} for axis {}", velocity, index);
-        Ok(velocity)
-    }
-
-    pub fn set_velocity(&mut self, index: usize, velocity: u32) -> io::Result<()> {
-        debug!("Setting velocity to {} for axis {}", velocity, index);
-        let axis = self.get_axis(index)?;
-        axis.set_velocity(velocity);
-        debug!(
-            "Successfully set velocity to {} for axis {}",
-            velocity, index
-        );
-        Ok(())
-    }
-
-    pub fn get_acceleration(&mut self, index: usize) -> io::Result<u16> {
-        debug!("Getting acceleration for axis {}", index);
-        let axis = self.get_axis(index)?;
-        let acceleration = axis.get_acceleration();
-        debug!("Got acceleration {} for axis {}", acceleration, index);
-        Ok(acceleration)
-    }
-
-    pub fn set_acceleration(&mut self, index: usize, acceleration: u16) -> io::Result<()> {
-        debug!(
-            "Setting acceleration to {} for axis {}",
-            acceleration, index
-        );
-        let axis = self.get_axis(index)?;
-        axis.set_acceleration(acceleration);
-        debug!(
-            "Successfully set acceleration to {} for axis {}",
-            acceleration, index
-        );
-        Ok(())
-    }
-
-    pub fn get_deceleration(&mut self, index: usize) -> io::Result<u16> {
-        debug!("Getting deceleration for axis {}", index);
-        let axis = self.get_axis(index)?;
-        let deceleration = axis.get_deceleration();
-        debug!("Got deceleration {} for axis {}", deceleration, index);
-        Ok(deceleration)
-    }
-
-    pub fn set_deceleration(&mut self, index: usize, deceleration: u16) -> io::Result<()> {
-        debug!(
-            "Setting deceleration to {} for axis {}",
-            deceleration, index
-        );
-        let axis = self.get_axis(index)?;
-        axis.set_deceleration(deceleration);
-        debug!(
-            "Successfully set deceleration to {} for axis {}",
-            deceleration, index
-        );
-        Ok(())
-    }
-
-    pub fn get_position_window(&mut self, index: usize) -> io::Result<f32> {
-        debug!("Getting position window for axis {}", index);
-        let axis = self.get_axis(index)?;
-        let position_window = axis.get_position_window();
-        debug!("Got position window {} for axis {}", position_window, index);
-        Ok(position_window)
-    }
-
-    pub fn set_position_window(&mut self, index: usize, position_window: f32) -> io::Result<()> {
-        debug!(
-            "Setting position window to {} for axis {}",
-            position_window, index
-        );
-        let axis = self.get_axis(index)?;
-        axis.set_position_window(position_window);
-        debug!(
-            "Successfully set position window to {} for axis {}",
-            position_window, index
-        );
-        Ok(())
-    }
-
-    pub fn get_time_limit(&mut self, index: usize) -> io::Result<Duration> {
-        debug!("Getting time limit for axis {}", index);
-        let axis = self.get_axis(index)?;
-        let time_limit = axis.get_time_limit();
-        debug!("Got time limit {} for axis {}", time_limit.as_secs(), index);
-        Ok(time_limit)
-    }
-
-    pub fn set_time_limit(&mut self, index: usize, time_limit: Duration) -> io::Result<()> {
-        debug!(
-            "Setting time limit to {} for axis {}",
-            time_limit.as_secs(),
-            index
-        );
-        let axis = self.get_axis(index)?;
-        axis.set_time_limit(time_limit);
-        debug!(
-            "Successfully set time limit to {} for axis {}",
-            time_limit.as_secs(),
-            index
-        );
-        Ok(())
-    }
-
     pub fn is_moving(&mut self, index: usize) -> bool {
         debug!("Checking if axis {} is moving", index);
         // FIXME: Probably this should return an error instead of false
@@ -452,7 +345,12 @@ impl MultiAxis {
         }
     }
 
-    pub fn move_to_position(&mut self, index: usize, position: f32) -> Result<(), String> {
+    pub fn move_to_position(
+        &mut self,
+        index: usize,
+        position: f32,
+        params: Option<MovementParams>,
+    ) -> Result<(), String> {
         debug!("Moving axis {} to position {}", index, position);
 
         if position < 6.5 || position > 14.0 {
@@ -465,7 +363,7 @@ impl MultiAxis {
             e.to_string()
         })?;
 
-        let result = axis.move_to_position(position);
+        let result = axis.move_to_position(position, params);
         if let Err(ref e) = result {
             error!(
                 "Failed to move axis {} to position {}: {}",

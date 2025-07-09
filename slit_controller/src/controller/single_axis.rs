@@ -17,7 +17,7 @@ use tracing::{debug, error, field::debug, info, warn};
 use trid::Trid;
 
 #[derive(Debug, Clone, Copy)]
-pub struct SingleAxisParams {
+pub struct MovementParams {
     pub acceleration: u16,
     pub deceleration: u16,
     pub velocity: u32,
@@ -25,9 +25,9 @@ pub struct SingleAxisParams {
     pub time_limit: Duration,
 }
 
-impl Default for SingleAxisParams {
+impl Default for MovementParams {
     fn default() -> Self {
-        SingleAxisParams {
+        MovementParams {
             acceleration: 500,
             deceleration: 500,
             velocity: 2000,
@@ -45,47 +45,8 @@ pub struct SingleAxis {
     trid_client: Arc<Mutex<TcpStream>>,
     standa_client: Arc<Mutex<TcpStream>>,
 
-    params: SingleAxisParams,
-
     move_thread: Option<JoinHandle<()>>,
     moving: Arc<AtomicBool>,
-}
-
-impl SingleAxis {
-    pub fn get_velocity(&self) -> u32 {
-        self.params.velocity
-    }
-    pub fn set_velocity(&mut self, velocity: u32) {
-        self.params.velocity = velocity;
-    }
-
-    pub fn get_acceleration(&self) -> u16 {
-        self.params.acceleration
-    }
-    pub fn set_acceleration(&mut self, acceleration: u16) {
-        self.params.acceleration = acceleration;
-    }
-
-    pub fn get_deceleration(&self) -> u16 {
-        self.params.deceleration
-    }
-    pub fn set_deceleration(&mut self, deceleration: u16) {
-        self.params.deceleration = deceleration;
-    }
-
-    pub fn get_position_window(&self) -> f32 {
-        self.params.position_window
-    }
-    pub fn set_position_window(&mut self, position_window: f32) {
-        self.params.position_window = position_window;
-    }
-
-    pub fn get_time_limit(&self) -> Duration {
-        self.params.time_limit
-    }
-    pub fn set_time_limit(&mut self, time_limit: Duration) {
-        self.params.time_limit = time_limit;
-    }
 }
 
 impl SingleAxis {
@@ -97,8 +58,6 @@ impl SingleAxis {
         standa_client: Arc<Mutex<TcpStream>>,
     ) -> Self {
         info!("Initializing SingleAxis with id {}", rf256_id);
-        let params = SingleAxisParams::default();
-        debug!("Using default parameters: {:?}", params);
 
         Self {
             rf256_id,
@@ -106,7 +65,6 @@ impl SingleAxis {
             rf256_client,
             trid_client,
             standa_client,
-            params,
             move_thread: None,
             moving: Arc::new(AtomicBool::new(false)),
         }
@@ -228,7 +186,7 @@ impl SingleAxis {
         result
     }
 
-    pub fn update_motor_settings(&self) -> io::Result<()> {
+    pub fn update_motor_settings(&self, params: MovementParams) -> io::Result<()> {
         debug!("Updating motor settings for id {}", self.rf256_id);
         debug!("Acquiring lock on Standa client for updating settings");
         let mut client = match self.standa_client.lock() {
@@ -244,20 +202,20 @@ impl SingleAxis {
 
         let standa = Standa::new();
 
-        debug!("Setting velocity to {}", self.params.velocity);
-        if let Err(e) = standa.set_velocity(client.deref_mut(), self.params.velocity) {
+        debug!("Setting velocity to {}", params.velocity);
+        if let Err(e) = standa.set_velocity(client.deref_mut(), params.velocity) {
             warn!("Failed to set velocity: {}", e);
             return Err(e);
         }
 
-        debug!("Setting acceleration to {}", self.params.acceleration);
-        if let Err(e) = standa.set_acceleration(client.deref_mut(), self.params.acceleration) {
+        debug!("Setting acceleration to {}", params.acceleration);
+        if let Err(e) = standa.set_acceleration(client.deref_mut(), params.acceleration) {
             warn!("Failed to set acceleration: {}", e);
             return Err(e);
         }
 
-        debug!("Setting deceleration to {}", self.params.deceleration);
-        if let Err(e) = standa.set_deceleration(client.deref_mut(), self.params.deceleration) {
+        debug!("Setting deceleration to {}", params.deceleration);
+        if let Err(e) = standa.set_deceleration(client.deref_mut(), params.deceleration) {
             warn!("Failed to set deceleration: {}", e);
             return Err(e);
         }
@@ -306,7 +264,11 @@ impl SingleAxis {
         Ok(())
     }
 
-    pub fn move_to_position(&mut self, target: f32) -> Result<(), String> {
+    pub fn move_to_position(
+        &mut self,
+        target: f32,
+        params: Option<MovementParams>,
+    ) -> Result<(), String> {
         debug!(
             "Attempting to move axis {} to position {}",
             self.rf256_id, target
@@ -319,9 +281,11 @@ impl SingleAxis {
             return Err("Axis is already in motion".to_string());
         }
 
+        let params = params.unwrap_or_else(MovementParams::default);
+
         info!("Moving id {} to position {}", self.rf256_id, target);
         debug!("Updating motor settings before movement");
-        self.update_motor_settings().map_err(|e| {
+        self.update_motor_settings(params).map_err(|e| {
             warn!("Failed to update motor settings: {}", e);
             format!("Failed to update motor settings: {}", e)
         })?;
@@ -335,8 +299,8 @@ impl SingleAxis {
             Arc::clone(&self.standa_client),
             self.rf256_id,
             target,
-            self.params.position_window,
-            self.params.time_limit,
+            params.position_window,
+            params.time_limit,
             Arc::clone(&self.moving),
         );
 
@@ -403,7 +367,7 @@ impl SingleAxis {
 
                 match Rf256::new(rf256_id).read_data(client.deref_mut()) {
                     Ok(position) => return Ok(position),
-                    Err(e) if attempts < retries => {
+                    Err(_e) if attempts < retries => {
                         attempts += 1;
                         continue;
                     }
@@ -424,12 +388,7 @@ impl SingleAxis {
         });
 
         // Get simple values before joining threads
-        let velocity = Ok(self.get_velocity());
-        let acceleration = Ok(self.get_acceleration());
-        let deceleration = Ok(self.get_deceleration());
-        let position_window = Ok(self.get_position_window());
         let is_moving = Ok(self.is_moving());
-        let time_limit = Ok(self.get_time_limit());
 
         // Join threads and collect results
         let state = state_get_handle.join().expect("State thread panicked");
@@ -444,11 +403,6 @@ impl SingleAxis {
             position,
             state,
             is_moving,
-            velocity,
-            acceleration,
-            deceleration,
-            position_window,
-            time_limit,
             temperature,
         })
     }

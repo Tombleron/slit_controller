@@ -25,11 +25,6 @@ pub async fn run_state_monitor(
                     temperature: Err(e.to_string()),
                     state: Err(e.to_string()),
                     is_moving: Err(e.to_string()),
-                    velocity: Err(e.to_string()),
-                    acceleration: Err(e.to_string()),
-                    deceleration: Err(e.to_string()),
-                    position_window: Err(e.to_string()),
-                    time_limit: Err(e.to_string()),
                 },
             };
 
