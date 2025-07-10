@@ -30,7 +30,6 @@ pub async fn run_state_monitor(
 
             let mut shared_state = shared_state.lock().await;
             shared_state.axes[axis] = Some(axis_state);
-            dbg!(&shared_state.axes[axis]);
         }
     }
 }
