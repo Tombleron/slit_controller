@@ -2,7 +2,8 @@
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PACKAGE_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$PACKAGE_DIR")"
 cd "$PROJECT_DIR"
 
 echo "Building slit_controller in release mode..."
