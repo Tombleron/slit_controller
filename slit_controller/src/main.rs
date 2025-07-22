@@ -12,7 +12,6 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Check if we should create a default config file
     if let Ok(create_config) = std::env::var("CREATE_CONFIG") {
         if create_config == "1" || create_config.to_lowercase() == "true" {
             info!("Creating default configuration file...");
@@ -42,19 +41,16 @@ async fn main() -> anyhow::Result<()> {
         multi_axis_controller,
     ) = create_controller(config.multi_axis_config);
 
-    dbg!("sstarting controller");
     let multi_axis = Arc::new(Mutex::new(multi_axis_controller));
     let multi_axis_clone = Arc::clone(&multi_axis);
     let controller_handle =
         tokio::spawn(async move { run_controller(command_rx, multi_axis_clone).await });
 
-    dbg!("starting state monitor");
     let state_clone = state.clone();
     let multi_axis_clone = Arc::clone(&multi_axis);
     let state_monitor_handle =
         tokio::spawn(async move { run_state_monitor(state_clone, multi_axis_clone).await });
 
-    dbg!("starting command executors");
     let rf256_handle = tokio::task::spawn_blocking(move || rf256_command_executor.run());
     let trid_handle = tokio::task::spawn_blocking(move || trid_command_executor.run());
     let upper_standa_handle =
@@ -65,7 +61,6 @@ async fn main() -> anyhow::Result<()> {
         tokio::task::spawn_blocking(move || right_standa_command_executor.run());
     let left_standa_handle =
         tokio::task::spawn_blocking(move || left_standa_command_executor.run());
-    
 
     run_communication_layer(command_tx, state).await?;
     controller_handle.await??;
