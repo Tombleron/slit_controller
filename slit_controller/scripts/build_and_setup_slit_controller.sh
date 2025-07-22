@@ -27,7 +27,7 @@ sudo cp "$PROJECT_DIR/target/release/slit_controller" /opt/slit_controller/bin/
 sudo chmod +x /opt/slit_controller/bin/slit_controller
 
 echo "Copying default config to /opt/slit_controller/config..."
-sudo cp "$PROJECT_DIR/default_config.toml" /opt/slit_controller/config/
+sudo cp "$PACKAGE_DIR/default_config.toml" /opt/slit_controller/config/
 
 echo "Copying systemd service files..."
 sudo cp "$SCRIPT_DIR/service_files/slit-controller.service" /etc/systemd/system/
