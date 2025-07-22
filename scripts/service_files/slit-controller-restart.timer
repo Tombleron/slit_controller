@@ -1,0 +1,11 @@
+[Unit]
+Description=Restart Slit Controller Service every 5 minutes
+Requires=slit-controller.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Unit=slit-controller-restart.service
+
+[Install]
+WantedBy=timers.target

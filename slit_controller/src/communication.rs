@@ -124,23 +124,8 @@ pub async fn run_communication_layer(
                                         CommandResponse::State(state) => {
                                             format!("{:?}\n", state)
                                         }
-                                        CommandResponse::Velocity(vel) => {
-                                            format!("{}\n", vel)
-                                        }
-                                        CommandResponse::Acceleration(acc) => {
-                                            format!("{}\n", acc)
-                                        }
-                                        CommandResponse::Deceleration(dec) => {
-                                            format!("{}\n", dec)
-                                        }
-                                        CommandResponse::PositionWindow(win) => {
-                                            format!("{}\n", win)
-                                        }
                                         CommandResponse::Moving(is_moving) => {
                                             format!("{}\n", is_moving)
-                                        }
-                                        CommandResponse::TimeLimit(duration) => {
-                                            format!("{}\n", duration.as_secs())
                                         }
                                         CommandResponse::Error(e) => {
                                             format!("Error: {}\n", e)

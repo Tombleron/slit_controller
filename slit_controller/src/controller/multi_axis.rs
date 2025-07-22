@@ -1,355 +1,57 @@
 use std::io::{self};
-use std::net::{Shutdown, SocketAddr, TcpStream};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use standa::command::state::StateParams;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error};
 
+use crate::command_executor::encoder::command_sender::Rf256CommandSender;
+use crate::command_executor::temperature::command_sender::TridCommandSender;
 use crate::controller::single_axis::SingleAxis;
 use crate::models::AxisState;
 
 use super::single_axis::MovementParams;
 
 pub struct MultiAxis {
-    rf256_client: Option<Arc<Mutex<TcpStream>>>,
-    trid_client: Option<Arc<Mutex<TcpStream>>>,
-    standa_clients: [Option<Arc<Mutex<TcpStream>>>; 4],
+    axes: [SingleAxis; 4],
 
-    rf256_ids: [u8; 4],
-    trid_ids: [u8; 4],
-
-    axes: [Option<SingleAxis>; 4],
-
-    config: MultiAxisConfig,
+    rf256_cs: Rf256CommandSender,
+    trid_cs: TridCommandSender,
 }
 
 impl MultiAxis {
-    pub fn from_config(config: MultiAxisConfig) -> Self {
-        info!("Initializing MultiAxis controller");
-        // Empty clients for RF256 and Standa
-        // They are initialized later, when needed client
-        // is requested
+    pub fn new(
+        axes: [SingleAxis; 4],
+        rf256_cs: Rf256CommandSender,
+        trid_cs: TridCommandSender,
+    ) -> Self {
         Self {
-            rf256_client: None,
-            trid_client: None,
-            standa_clients: [None, None, None, None],
-            rf256_ids: [
-                config.upper_rf256_id,
-                config.lower_rf256_id,
-                config.left_rf256_id,
-                config.right_rf256_id,
-            ],
-            trid_ids: [
-                config.upper_trid_id,
-                config.lower_trid_id,
-                config.left_trid_id,
-                config.right_trid_id,
-            ],
-            axes: [None, None, None, None],
-            config,
+            rf256_cs,
+            trid_cs,
+            axes,
         }
     }
 
-    fn get_trid_client(&mut self) -> io::Result<Arc<Mutex<TcpStream>>> {
-        if self.trid_client.is_none() {
-            debug!("TRID client is not initialized, creating a new one");
-
-            debug!(
-                "Connecting to TRID at {}:{}",
-                self.config.trid_ip, self.config.trid_port
-            );
-            match TcpStream::connect_timeout(
-                &SocketAddr::new(self.config.trid_ip.parse().unwrap(), self.config.trid_port),
-                Duration::from_secs(1),
-            ) {
-                Ok(stream) => {
-                    if let Err(e) =
-                        stream.set_read_timeout(Some(std::time::Duration::from_millis(100)))
-                    {
-                        warn!("Failed to set read timeout for TRID client: {}", e);
-                    }
-
-                    debug!("Successfully connected to TRID");
-                    self.trid_client = Some(Arc::new(Mutex::new(stream)));
-                }
-                Err(e) => {
-                    error!("Failed to connect to TRID: {}", e);
-                    return Err(e);
-                }
-            }
-        }
-        Ok(self.trid_client.as_ref().unwrap().clone())
+    async fn reconnect_rf256_client(&mut self) -> io::Result<()> {
+        self.rf256_cs.reconnect().await
     }
 
-    #[instrument(skip(self))]
-    fn get_rf256_client(&mut self) -> io::Result<Arc<Mutex<TcpStream>>> {
-        if self.rf256_client.is_none() {
-            debug!("RF256 client is not initialized, creating a new one");
-
-            debug!(
-                "Connecting to RF256 at {}:{}",
-                self.config.rf256_ip, self.config.rf256_port
-            );
-            match TcpStream::connect_timeout(
-                &SocketAddr::new(
-                    self.config.rf256_ip.parse().unwrap(),
-                    self.config.rf256_port,
-                ),
-                Duration::from_secs(1),
-            ) {
-                Ok(stream) => {
-                    if let Err(e) =
-                        stream.set_read_timeout(Some(std::time::Duration::from_millis(100)))
-                    {
-                        warn!("Failed to set read timeout for RF256 client: {}", e);
-                    }
-
-                    debug!("Successfully connected to RF256");
-                    self.rf256_client = Some(Arc::new(Mutex::new(stream)));
-                }
-                Err(e) => {
-                    error!("Failed to connect to RF256: {}", e);
-                    return Err(e);
-                }
-            }
-        }
-        Ok(self.rf256_client.as_ref().unwrap().clone())
+    async fn reconnect_trid_client(&mut self) -> io::Result<()> {
+        self.trid_cs.reconnect().await
     }
 
-    #[instrument(skip(self))]
-    fn get_standa_client(&mut self, index: usize) -> io::Result<Arc<Mutex<TcpStream>>> {
-        if self.standa_clients[index].is_none() {
-            debug!(
-                "Standa client at index {} is not initialized, creating a new one",
-                index
-            );
-
-            let ip = match index {
-                0 => &self.config.upper_standa_ip,
-                1 => &self.config.lower_standa_ip,
-                2 => &self.config.left_standa_ip,
-                3 => &self.config.right_standa_ip,
-                _ => unreachable!(),
-            };
-            let port = match index {
-                0 => self.config.upper_standa_port,
-                1 => self.config.lower_standa_port,
-                2 => self.config.left_standa_port,
-                3 => self.config.right_standa_port,
-                _ => unreachable!(),
-            };
-
-            debug!("Connecting to Standa at {}:{}", ip, port);
-            match TcpStream::connect_timeout(
-                &SocketAddr::new(ip.parse().unwrap(), port),
-                Duration::from_secs(1),
-            ) {
-                Ok(stream) => {
-                    if let Err(e) =
-                        stream.set_read_timeout(Some(std::time::Duration::from_millis(100)))
-                    {
-                        warn!("Failed to set read timeout for Standa client: {}", e);
-                    }
-
-                    debug!("Successfully connected to Standa at index {}", index);
-                    self.standa_clients[index] = Some(Arc::new(Mutex::new(stream)));
-                }
-                Err(e) => {
-                    error!("Failed to connect to Standa at index {}: {}", index, e);
-                    return Err(e);
-                }
-            }
-        }
-
-        Ok(self.standa_clients[index].as_ref().unwrap().clone())
-    }
-
-    #[instrument(skip(self))]
-    fn reconnect_rf256_client(&mut self) -> io::Result<()> {
-        if let Some(client) = &self.rf256_client {
-            debug!(
-                "Reconnecting to RF256 at {}:{}",
-                self.config.rf256_ip, self.config.rf256_port
-            );
-            let mut stream = client.lock().unwrap();
-
-            stream.shutdown(Shutdown::Both).map_err(|e| {
-                warn!("Failed to shutdown RF256 client: {}", e);
-                e
-            })?;
-
-            std::thread::sleep(std::time::Duration::from_millis(50));
-
-            match TcpStream::connect_timeout(
-                &SocketAddr::new(
-                    self.config.rf256_ip.parse().unwrap(),
-                    self.config.rf256_port,
-                ),
-                Duration::from_secs(1),
-            ) {
-                Ok(new_stream) => {
-                    *stream = new_stream;
-                    if let Err(e) =
-                        stream.set_read_timeout(Some(std::time::Duration::from_millis(100)))
-                    {
-                        warn!("Failed to set read timeout for RF256 client: {}", e);
-                        return Err(e);
-                    }
-                    debug!("Successfully reconnected to RF256");
-                }
-                Err(e) => {
-                    error!("Failed to reconnect to RF256: {}", e);
-                    return Err(e);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn reconnect_trid_client(&mut self) -> io::Result<()> {
-        if let Some(client) = &self.trid_client {
-            debug!(
-                "Reconnecting to TRID at {}:{}",
-                self.config.trid_ip, self.config.trid_port
-            );
-            let mut stream = client.lock().unwrap();
-
-            stream.shutdown(Shutdown::Both).map_err(|e| {
-                warn!("Failed to shutdown TRID client: {}", e);
-                e
-            })?;
-            std::thread::sleep(std::time::Duration::from_millis(50));
-
-            match TcpStream::connect_timeout(
-                &SocketAddr::new(self.config.trid_ip.parse().unwrap(), self.config.trid_port),
-                Duration::from_secs(1),
-            ) {
-                Ok(new_stream) => {
-                    *stream = new_stream;
-                    if let Err(e) =
-                        stream.set_read_timeout(Some(std::time::Duration::from_millis(100)))
-                    {
-                        warn!("Failed to set read timeout for TRID client: {}", e);
-                        return Err(e);
-                    }
-                    debug!("Successfully reconnected to TRID");
-                }
-                Err(e) => {
-                    error!("Failed to reconnect to TRID: {}", e);
-                    return Err(e);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    #[instrument(skip(self))]
-    fn reconnect_standa_client(&mut self, index: usize) -> io::Result<()> {
-        if let Some(client) = &self.standa_clients[index] {
-            let ip = match index {
-                0 => &self.config.upper_standa_ip,
-                1 => &self.config.lower_standa_ip,
-                2 => &self.config.left_standa_ip,
-                3 => &self.config.right_standa_ip,
-                _ => unreachable!(),
-            };
-            let port = match index {
-                0 => self.config.upper_standa_port,
-                1 => self.config.lower_standa_port,
-                2 => self.config.left_standa_port,
-                3 => self.config.right_standa_port,
-                _ => unreachable!(),
-            };
-
-            debug!(
-                "Reconnecting to Standa at index {} ({}:{})",
-                index, ip, port
-            );
-            let mut stream = client.lock().unwrap();
-
-            stream.shutdown(Shutdown::Both).map_err(|e| {
-                warn!("Failed to shutdown Standa client at index {}: {}", index, e);
-                e
-            })?;
-
-            std::thread::sleep(std::time::Duration::from_millis(50));
-
-            match TcpStream::connect_timeout(
-                &SocketAddr::new(ip.parse().unwrap(), port),
-                Duration::from_secs(1),
-            ) {
-                Ok(new_stream) => {
-                    *stream = new_stream;
-                    if let Err(e) =
-                        stream.set_read_timeout(Some(std::time::Duration::from_millis(100)))
-                    {
-                        warn!("Failed to set read timeout for Standa client: {}", e);
-                        return Err(e);
-                    }
-                    debug!("Successfully reconnected to Standa at index {}", index);
-                }
-                Err(e) => {
-                    error!("Failed to reconnect to Standa at index {}: {}", index, e);
-                    return Err(e);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn get_axis(&mut self, index: usize) -> io::Result<&mut SingleAxis> {
-        if self.axes[index].is_none()
-            || self.standa_clients[index].is_none()
-            || self.rf256_client.is_none()
-        {
-            debug!(
-                "Axis at index {} is not initialized, creating a new one",
-                index
-            );
-            let rf256_client = self.get_rf256_client()?;
-            let standa_client = self.get_standa_client(index)?;
-            let trid_client = self.get_trid_client()?;
-
-            debug!("Creating new SingleAxis controller for index {}", index);
-            self.axes[index] = Some(SingleAxis::new(
-                rf256_client,
-                self.rf256_ids[index],
-                trid_client,
-                self.trid_ids[index],
-                standa_client,
-            ));
-            debug!(
-                "Successfully created SingleAxis controller for index {}",
-                index
-            );
-        }
-
-        Ok(self.axes[index].as_mut().unwrap())
+    async fn reconnect_standa_client(&mut self, index: usize) -> io::Result<()> {
+        self.axes[index].reconnect_standa_client().await
     }
 
     pub fn is_moving(&mut self, index: usize) -> bool {
-        debug!("Checking if axis {} is moving", index);
-        // FIXME: Probably this should return an error instead of false
-        if let Ok(axis) = self.get_axis(index) {
-            let moving = axis.is_moving();
-            debug!("Axis {} is moving: {}", index, moving);
-            moving
-        } else {
-            debug!(
-                "Failed to get axis {}, returning false for is_moving",
-                index
-            );
-            false
-        }
+        self.axes[index].is_moving()
     }
 
-    pub fn move_to_position(
+    pub async fn move_to_position(
         &mut self,
         index: usize,
         position: f32,
-        params: Option<MovementParams>,
+        params: MovementParams,
     ) -> Result<(), String> {
         debug!("Moving axis {} to position {}", index, position);
 
@@ -358,50 +60,24 @@ impl MultiAxis {
             return Err("Position is out of bounds, (6.5, 14)".to_string());
         }
 
-        let axis = self.get_axis(index).map_err(|e| {
-            error!("Failed to get axis {}: {}", index, e);
-            e.to_string()
-        })?;
+        let result = self.axes[index].move_to_position(position, params).await;
 
-        let result = axis.move_to_position(position, params);
-        if let Err(ref e) = result {
-            error!(
-                "Failed to move axis {} to position {}: {}",
-                index, position, e
-            );
-        } else {
-            debug!(
-                "Successfully started moving axis {} to position {}",
-                index, position
-            );
-        }
         result
     }
 
-    pub fn stop(&mut self, index: usize) -> Result<(), String> {
-        debug!("Stopping axis {}", index);
-        let axis = self.get_axis(index).map_err(|e| {
-            error!("Failed to get axis {}: {}", index, e);
-            e.to_string()
-        })?;
-        let result = axis.stop();
-        if let Err(ref e) = result {
+    pub async fn stop(&mut self, index: usize) -> Result<(), String> {
+        self.axes[index].stop().await.map_err(|e| {
             error!("Failed to stop axis {}: {}", index, e);
-        } else {
-            debug!("Successfully stopped axis {}", index);
-        }
-        result
+            e.to_string()
+        })
     }
 
-    pub fn position(&mut self, index: usize) -> io::Result<f32> {
-        debug!("Getting position for axis {}", index);
-        let axis = self.get_axis(index)?;
-        let result = axis.position_with_retries(5);
+    pub async fn position(&mut self, index: usize) -> io::Result<f32> {
+        let result = self.axes[index].position_with_retries(5).await;
+
         if let Err(ref e) = result {
-            error!("Failed to get position for axis {}: {}", index, e);
             if e.kind() == io::ErrorKind::BrokenPipe {
-                error!("Detected broken pipe, attempting to reconnect RF256 client");
-                self.reconnect_rf256_client()?;
+                self.reconnect_rf256_client().await?;
             }
         } else if let Ok(pos) = result {
             debug!("Got position {} for axis {}", pos, index);
@@ -409,15 +85,12 @@ impl MultiAxis {
         result
     }
 
-    pub fn temperature(&mut self, index: usize) -> io::Result<f32> {
-        debug!("Getting temperature for axis {}", index);
-        let axis = self.get_axis(index)?;
-        let result = axis.temperature();
+    pub async fn temperature(&mut self, index: usize) -> io::Result<f32> {
+        let result = self.axes[index].temperature().await;
+
         if let Err(ref e) = result {
-            error!("Failed to get temperature for axis {}: {}", index, e);
             if e.kind() == io::ErrorKind::BrokenPipe || e.kind() == io::ErrorKind::WouldBlock {
-                warn!("Detected broken pipe or would block, attempting to reconnect Standa client for index {}", index);
-                self.reconnect_trid_client()?;
+                self.reconnect_trid_client().await?;
             }
         } else {
             debug!("Successfully got temperature for axis {}", index);
@@ -425,15 +98,12 @@ impl MultiAxis {
         result
     }
 
-    pub fn state(&mut self, index: usize) -> io::Result<StateParams> {
-        debug!("Getting state for axis {}", index);
-        let axis = self.get_axis(index)?;
-        let result = axis.state();
+    pub async fn state(&mut self, index: usize) -> io::Result<StateParams> {
+        let result = self.axes[index].state().await;
+
         if let Err(ref e) = result {
-            error!("Failed to get state for axis {}: {}", index, e);
             if e.kind() == io::ErrorKind::BrokenPipe || e.kind() == io::ErrorKind::WouldBlock {
-                warn!("Detected broken pipe or would block, attempting to reconnect Standa client for index {}", index);
-                self.reconnect_standa_client(index)?;
+                self.reconnect_standa_client(index).await?;
             }
         } else {
             debug!("Successfully got state for axis {}", index);
@@ -441,13 +111,8 @@ impl MultiAxis {
         result
     }
 
-    pub fn get_axis_state(&mut self, index: usize) -> io::Result<AxisState> {
-        self.get_axis(index)
-            .and_then(|axis| axis.get_axis_state())
-            .map_err(|e| {
-                error!("Failed to get axis state for index {}: {}", index, e);
-                e
-            })
+    pub async fn get_axis_state(&mut self, index: usize) -> io::Result<AxisState> {
+        self.axes[index].get_axis_state().await
     }
 }
 

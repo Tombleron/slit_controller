@@ -1,5 +1,5 @@
 use standa::command::state::StateParams;
-use std::{fmt, time::Duration};
+use std::fmt;
 use tokio::sync::oneshot;
 
 use crate::controller::single_axis::MovementParams;
@@ -43,12 +43,7 @@ pub enum CommandResponse {
     Success,
     Position(f32),
     State((State, Limit)),
-    Velocity(u32),
-    Acceleration(u16),
-    Deceleration(u16),
-    PositionWindow(f32),
     Moving(bool),
-    TimeLimit(Duration),
     Temperature(f32),
     Error(String),
 }
@@ -57,10 +52,6 @@ pub enum CommandResponse {
 pub enum CommandParams {
     Position(f32),
     Velocity(u32),
-    Acceleration(u16),
-    Deceleration(u16),
-    PositionWindow(f32),
-    TimeLimit(Duration),
     Temperature(u16),
     None,
 }

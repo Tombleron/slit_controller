@@ -1,0 +1,24 @@
+[Unit]
+Description=Slit Controller Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+Environment="CONFIG_PATH=/opt/slit_controller/config/default_config.toml"
+ExecStart=/opt/slit_controller/bin/slit_controller
+ExecStartPost=/bin/bash -c 'sleep 1; chmod 666 /tmp/slit_controller.sock'
+WorkingDirectory=/opt/slit_controller
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/slit_controller/stdout.log
+StandardError=append:/var/log/slit_controller/stderr.log
+
+# Create socket directory with proper permissions
+PermissionsStartOnly=true
+ExecStartPre=/bin/mkdir -p /tmp
+ExecStartPre=/bin/rm -f /tmp/slit_controller.sock
+
+[Install]
+WantedBy=multi-user.target
