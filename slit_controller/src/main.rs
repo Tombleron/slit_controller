@@ -10,18 +10,6 @@ use slit_controller::{
 };
 use tracing::info;
 
-/// Programs works as three separate tasks:
-/// 1. Communication layer - handles unix domain socket connections, parses commands and sends them to controller
-/// 2. Controller - owns MultiAxis, executes actions like move, stop, etc.
-/// 3. State monitor - polls controller for positions and states of axes, sends them to communication layer
-///
-/// +-----------------------------+
-/// | 1. Communication Thread     |  <-- Async, handles client commands
-/// | 2. Controller Thread        |  <-- Owns MultiAxis, executes actions
-/// | 3. State Monitor Thread     |  <-- Polls controller for positions/states
-/// +-----------------------------+
-///           Shared via channels
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Check if we should create a default config file
@@ -44,19 +32,51 @@ async fn main() -> anyhow::Result<()> {
         axes: [None, None, None, None],
     }));
 
-    let multi_axis_controller = create_controller(config.multi_axis_config);
+    let (
+        mut rf256_command_executor,
+        mut trid_command_executor,
+        mut upper_standa_command_executor,
+        mut lower_standa_command_executor,
+        mut right_standa_command_executor,
+        mut left_standa_command_executor,
+        multi_axis_controller,
+    ) = create_controller(config.multi_axis_config);
 
-    let multi_axis = multi_axis_controller.clone();
+    dbg!("sstarting controller");
+    let multi_axis = Arc::new(Mutex::new(multi_axis_controller));
+    let multi_axis_clone = Arc::clone(&multi_axis);
     let controller_handle =
-        tokio::spawn(async move { run_controller(command_rx, multi_axis).await });
+        tokio::spawn(async move { run_controller(command_rx, multi_axis_clone).await });
 
+    dbg!("starting state monitor");
     let state_clone = state.clone();
+    let multi_axis_clone = Arc::clone(&multi_axis);
     let state_monitor_handle =
-        tokio::spawn(async move { run_state_monitor(state_clone, multi_axis_controller).await });
+        tokio::spawn(async move { run_state_monitor(state_clone, multi_axis_clone).await });
+
+    dbg!("starting command executors");
+    let rf256_handle = tokio::task::spawn_blocking(move || rf256_command_executor.run());
+    let trid_handle = tokio::task::spawn_blocking(move || trid_command_executor.run());
+    let upper_standa_handle =
+        tokio::task::spawn_blocking(move || upper_standa_command_executor.run());
+    let lower_standa_handle =
+        tokio::task::spawn_blocking(move || lower_standa_command_executor.run());
+    let right_standa_handle =
+        tokio::task::spawn_blocking(move || right_standa_command_executor.run());
+    let left_standa_handle =
+        tokio::task::spawn_blocking(move || left_standa_command_executor.run());
+    
 
     run_communication_layer(command_tx, state).await?;
     controller_handle.await??;
     state_monitor_handle.await??;
+
+    rf256_handle.await??;
+    trid_handle.await??;
+    upper_standa_handle.await??;
+    lower_standa_handle.await??;
+    right_standa_handle.await??;
+    left_standa_handle.await??;
 
     Ok(())
 }

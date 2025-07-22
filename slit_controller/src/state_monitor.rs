@@ -18,18 +18,13 @@ pub async fn run_state_monitor(
         for axis in 0..4 {
             let mut multi_axis = multi_axis_controller.lock().await;
 
-            let axis_state = match multi_axis.get_axis_state(axis) {
+            let axis_state = match multi_axis.get_axis_state(axis).await {
                 Ok(state) => state,
                 Err(e) => AxisState {
                     position: Err(e.to_string()),
                     temperature: Err(e.to_string()),
                     state: Err(e.to_string()),
                     is_moving: Err(e.to_string()),
-                    velocity: Err(e.to_string()),
-                    acceleration: Err(e.to_string()),
-                    deceleration: Err(e.to_string()),
-                    position_window: Err(e.to_string()),
-                    time_limit: Err(e.to_string()),
                 },
             };
 

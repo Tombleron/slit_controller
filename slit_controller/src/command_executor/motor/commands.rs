@@ -3,16 +3,22 @@ use std::io;
 use standa::command::state::StateParams;
 use tokio::sync::oneshot::Sender;
 
-pub enum MotorAttribute {
-    Velocity,
-    Acceleration,
-    Deceleration,
+pub enum GetMotorAttribute {
     State,
 }
 
+pub enum SetMotorAttribute {
+    Velocity(u32),
+    Acceleration(u16),
+    Deceleration(u16),
+}
+
 pub enum MotorCommandType {
-    Get(MotorAttribute),
-    Set(),
+    Get(GetMotorAttribute),
+    Set(SetMotorAttribute),
+    Stop,
+    Move { steps: i32, substeps: i16 },
+    Reconnect,
 }
 
 pub struct MotorCommand {
@@ -44,4 +50,5 @@ impl MotorCommand {
 pub enum CommandResponse {
     None,
     State(StateParams),
+    Ok,
 }

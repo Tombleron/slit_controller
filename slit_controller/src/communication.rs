@@ -47,24 +47,7 @@ async fn handle_get_command(envelop: CommandEnvelope, shared_state: Arc<Mutex<Sh
                 .state
                 .clone()
                 .map(|state| CommandResponse::State(state_params_to_state(&state))),
-            AxisProperty::Velocity => axis_state.velocity.clone().map(CommandResponse::Velocity),
-            AxisProperty::Acceleration => axis_state
-                .acceleration
-                .clone()
-                .map(CommandResponse::Acceleration),
-            AxisProperty::Deceleration => axis_state
-                .deceleration
-                .clone()
-                .map(CommandResponse::Deceleration),
-            AxisProperty::PositionWindow => axis_state
-                .position_window
-                .clone()
-                .map(CommandResponse::PositionWindow),
             AxisProperty::Moving => axis_state.is_moving.clone().map(CommandResponse::Moving),
-            AxisProperty::TimeLimit => axis_state
-                .time_limit
-                .clone()
-                .map(|time| CommandResponse::TimeLimit(time)),
             AxisProperty::Temperature => axis_state
                 .temperature
                 .clone()
@@ -141,23 +124,8 @@ pub async fn run_communication_layer(
                                         CommandResponse::State(state) => {
                                             format!("{:?}\n", state)
                                         }
-                                        CommandResponse::Velocity(vel) => {
-                                            format!("{}\n", vel)
-                                        }
-                                        CommandResponse::Acceleration(acc) => {
-                                            format!("{}\n", acc)
-                                        }
-                                        CommandResponse::Deceleration(dec) => {
-                                            format!("{}\n", dec)
-                                        }
-                                        CommandResponse::PositionWindow(win) => {
-                                            format!("{}\n", win)
-                                        }
                                         CommandResponse::Moving(is_moving) => {
                                             format!("{}\n", is_moving)
-                                        }
-                                        CommandResponse::TimeLimit(duration) => {
-                                            format!("{}\n", duration.as_secs())
                                         }
                                         CommandResponse::Error(e) => {
                                             format!("Error: {}\n", e)

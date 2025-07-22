@@ -1,6 +1,8 @@
 use standa::command::state::StateParams;
-use std::{fmt, time::Duration};
+use std::fmt;
 use tokio::sync::oneshot;
+
+use crate::controller::single_axis::MovementParams;
 
 pub type CommandResult = Result<CommandResponse, CommandError>;
 
@@ -41,12 +43,7 @@ pub enum CommandResponse {
     Success,
     Position(f32),
     State((State, Limit)),
-    Velocity(u32),
-    Acceleration(u16),
-    Deceleration(u16),
-    PositionWindow(f32),
     Moving(bool),
-    TimeLimit(Duration),
     Temperature(f32),
     Error(String),
 }
@@ -55,10 +52,6 @@ pub enum CommandResponse {
 pub enum CommandParams {
     Position(f32),
     Velocity(u32),
-    Acceleration(u16),
-    Deceleration(u16),
-    PositionWindow(f32),
-    TimeLimit(Duration),
     Temperature(u16),
     None,
 }
@@ -68,6 +61,7 @@ pub enum Command {
     Move {
         axis: usize,
         position: f32,
+        params: Option<MovementParams>,
     },
     Stop {
         axis: usize,
@@ -76,12 +70,6 @@ pub enum Command {
     Get {
         axis: usize,
         property: AxisProperty,
-    },
-
-    Set {
-        axis: usize,
-        property: AxisProperty,
-        value: CommandParams,
     },
 }
 
@@ -95,12 +83,7 @@ impl Command {
 pub enum AxisProperty {
     Position,
     State,
-    Velocity,
-    Acceleration,
-    Deceleration,
-    PositionWindow,
     Moving,
-    TimeLimit,
     Temperature,
 }
 
@@ -118,11 +101,6 @@ pub struct AxisState {
     pub temperature: AxisStateValue<f32>,
     pub state: AxisStateValue<StateParams>,
     pub is_moving: AxisStateValue<bool>,
-    pub velocity: AxisStateValue<u32>,
-    pub acceleration: AxisStateValue<u16>,
-    pub deceleration: AxisStateValue<u16>,
-    pub position_window: AxisStateValue<f32>,
-    pub time_limit: AxisStateValue<Duration>,
 }
 
 #[derive(Debug)]

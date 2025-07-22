@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use crate::models::{AxisProperty, Command, CommandEnvelope, CommandParams, CommandResult};
+use crate::{
+    controller::single_axis::MovementParams,
+    models::{AxisProperty, Command, CommandEnvelope, CommandResult},
+};
 use tokio::sync::oneshot;
 
 pub fn parse_command(cmd_str: &str) -> Option<(CommandEnvelope, oneshot::Receiver<CommandResult>)> {
@@ -13,13 +16,36 @@ pub fn parse_command(cmd_str: &str) -> Option<(CommandEnvelope, oneshot::Receive
 
     let command = match parts[0] {
         "move" => {
-            if parts.len() != 3 {
+            // Two variants: "move:axis:position" or "move:axis:position:velocity:acceleration:deceleration:position_window:time_limit"
+            if parts.len() != 3 && parts.len() != 8 {
                 return None;
             }
             let axis = parts[1].parse::<usize>().ok()?;
             let position = parts[2].parse::<f32>().ok()?;
 
-            Command::Move { axis, position }
+            let params = if parts.len() == 8 {
+                let velocity = parts[3].parse::<u32>().ok()?;
+                let acceleration = parts[4].parse::<u16>().ok()?;
+                let deceleration = parts[5].parse::<u16>().ok()?;
+                let position_window = parts[6].parse::<f32>().ok()?;
+                let time_limit = parts[7].parse::<u64>().ok()?;
+
+                Some(MovementParams {
+                    velocity,
+                    acceleration,
+                    deceleration,
+                    position_window,
+                    time_limit: Duration::from_secs(time_limit),
+                })
+            } else {
+                None
+            };
+
+            Command::Move {
+                axis,
+                position,
+                params,
+            }
         }
         "stop" => {
             if parts.len() != 2 {
@@ -37,58 +63,12 @@ pub fn parse_command(cmd_str: &str) -> Option<(CommandEnvelope, oneshot::Receive
             let property = match parts[2] {
                 "position" => AxisProperty::Position,
                 "state" => AxisProperty::State,
-                "velocity" => AxisProperty::Velocity,
-                "acceleration" => AxisProperty::Acceleration,
-                "deceleration" => AxisProperty::Deceleration,
-                "position_window" => AxisProperty::PositionWindow,
                 "is_moving" => AxisProperty::Moving,
-                "time_limit" => AxisProperty::TimeLimit,
                 "temperature" => AxisProperty::Temperature,
                 _ => return None,
             };
 
             Command::Get { axis, property }
-        }
-        "set" => {
-            if parts.len() != 4 {
-                return None;
-            }
-            let axis = parts[1].parse::<usize>().ok()?;
-            let (property, value) = match parts[2] {
-                "velocity" => {
-                    let val = parts[3].parse::<u32>().ok()?;
-                    (AxisProperty::Velocity, CommandParams::Velocity(val))
-                }
-                "acceleration" => {
-                    let val = parts[3].parse::<u16>().ok()?;
-                    (AxisProperty::Acceleration, CommandParams::Acceleration(val))
-                }
-                "deceleration" => {
-                    let val = parts[3].parse::<u16>().ok()?;
-                    (AxisProperty::Deceleration, CommandParams::Deceleration(val))
-                }
-                "position_window" => {
-                    let val = parts[3].parse::<f32>().ok()?;
-                    (
-                        AxisProperty::PositionWindow,
-                        CommandParams::PositionWindow(val),
-                    )
-                }
-                "time_limit" => {
-                    let val = parts[3].parse::<u64>().ok()?;
-                    (
-                        AxisProperty::TimeLimit,
-                        CommandParams::TimeLimit(Duration::from_secs(val)),
-                    )
-                }
-                _ => return None,
-            };
-
-            Command::Set {
-                axis,
-                property,
-                value,
-            }
         }
         _ => return None,
     };

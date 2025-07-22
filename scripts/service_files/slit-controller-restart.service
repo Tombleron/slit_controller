@@ -1,0 +1,10 @@
+[Unit]
+Description=Restart Slit Controller Service
+Requires=slit-controller.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart slit-controller.service
+
+[Install]
+WantedBy=multi-user.target
