@@ -16,7 +16,7 @@ pub async fn run_state_monitor(
         interval.tick().await;
 
         for axis in 0..4 {
-            let mut multi_axis = multi_axis_controller.lock().await;
+            let multi_axis = multi_axis_controller.lock().await;
 
             let axis_state = match multi_axis.get_axis_state(axis).await {
                 Ok(state) => state,

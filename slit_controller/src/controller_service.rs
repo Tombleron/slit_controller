@@ -43,13 +43,9 @@ pub async fn run_controller(
             Command::Get {
                 axis: _,
                 property: _,
-            } => {
-                // GET commands should not reach the controller
-                // This is an error condition
-                Err(CommandError {
-                    message: "GET commands should not be handled by the controller".to_string(),
-                })
-            }
+            } => Err(CommandError {
+                message: "GET commands should not be handled by the controller".to_string(),
+            }),
         };
 
         let _ = response.send(result);

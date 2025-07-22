@@ -111,7 +111,7 @@ impl MultiAxis {
         result
     }
 
-    pub async fn get_axis_state(&mut self, index: usize) -> io::Result<AxisState> {
+    pub async fn get_axis_state(&self, index: usize) -> io::Result<AxisState> {
         self.axes[index].get_axis_state().await
     }
 }
