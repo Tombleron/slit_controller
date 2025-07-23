@@ -34,11 +34,12 @@ impl Inner {
 
     fn verify_id(&mut self, axis: u8) -> std::io::Result<()> {
         let id = self.rf256[axis as usize].get_device_id();
+        let requested_id = self.rf256[axis as usize].read_id(&mut self.tcp_stream)?;
 
-        if id != self.rf256[0].read_id(&mut self.tcp_stream)? {
+        if id != requested_id {
             return Err(std::io::Error::new(
                 ErrorKind::InvalidData,
-                format!("Device ID mismatch: expected {}, got {}", axis, id),
+                format!("Device ID mismatch: expected {}, got {}", id, requested_id),
             ));
         }
         Ok(())
