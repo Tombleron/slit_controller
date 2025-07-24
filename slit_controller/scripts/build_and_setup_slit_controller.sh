@@ -26,8 +26,14 @@ echo "Copying executable to /opt/slit_controller/bin..."
 sudo cp "$PROJECT_DIR/target/release/slit_controller" /opt/slit_controller/bin/
 sudo chmod +x /opt/slit_controller/bin/slit_controller
 
-echo "Copying default config to /opt/slit_controller/config..."
-sudo cp "$PACKAGE_DIR/default_config.toml" /opt/slit_controller/config/
+# Check if config file already exists
+CONFIG_PATH="/opt/slit_controller/config/default_config.toml"
+if [ -f "$CONFIG_PATH" ]; then
+  echo "Config file already exists at $CONFIG_PATH, keeping existing configuration."
+else
+  echo "Copying default config to $CONFIG_PATH..."
+  sudo cp "$PACKAGE_DIR/default_config.toml" "$CONFIG_PATH"
+fi
 
 echo "Copying systemd service files..."
 sudo cp "$SCRIPT_DIR/service_files/slit-controller.service" /etc/systemd/system/
