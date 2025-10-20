@@ -1,21 +1,28 @@
-[multi_axis_config]
-rf256_ip = "192.168.0.51"
+rf256_ip = "192.168.0.55"
 rf256_port = 60003
 trid_ip = "192.168.0.51"
 trid_port = 60002
-upper_standa_ip = "192.168.0.204"
-upper_standa_port = 2000
-upper_rf256_id = 6
-upper_trid_id = 0
-lower_standa_ip = "192.168.0.204"
-lower_standa_port = 3000
-lower_rf256_id = 15
-lower_trid_id = 1
-left_standa_ip = "192.168.0.205"
-left_standa_port = 2000
-left_rf256_id = 5
-left_trid_id = 2
-right_standa_ip = "192.168.0.205"
-right_standa_port = 3000
-right_rf256_id = 4
-right_trid_id = 3
+
+[upper_axis]
+standa_ip = "192.168.0.204"
+standa_port = 2000
+rf256_id = 5
+trid_id = 0
+
+[lower_axis]
+standa_ip = "192.168.0.204"
+standa_port = 3000
+rf256_id = 15
+trid_id = 1
+
+[left_axis]
+standa_ip = "192.168.0.205"
+standa_port = 2000
+rf256_id = 6
+trid_id = 2
+
+[right_axis]
+standa_ip = "192.168.0.205"
+standa_port = 3000
+rf256_id = 4
+trid_id = 3

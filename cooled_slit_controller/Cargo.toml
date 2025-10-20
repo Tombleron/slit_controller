@@ -1,0 +1,11 @@
+[package]
+name = "cooled_slit_controller"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.47.1", features = ["full"] }
+utilities = { path = "../utilities" }
+icpcon = { path = "../icpcon" }
+lir = { path = "../lir" }
+em2rs = { path = "../em2rs" }

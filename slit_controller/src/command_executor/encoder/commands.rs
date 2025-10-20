@@ -1,54 +1,38 @@
-use std::io;
+use utilities::command_executor::Command;
 
-use tokio::sync::oneshot::Sender;
+use crate::command_executor::encoder::Rf256Handler;
 
-pub enum GetEncoderAttribute {
-    PositionWithRetries(u8),
-    Position,
-    Id,
+const MAX_RETRIES: u8 = 5;
+
+#[derive(Clone)]
+pub enum EncoderCommand {
+    GetPosition { axis: u8 },
 }
 
-pub enum EncoderCommandType {
-    Get(GetEncoderAttribute),
-    Reconnect,
+pub enum EncoderResponse {
+    Position { axis: u8, position: f32 },
 }
 
-pub struct EncoderCommand {
-    axis: u8,
-    command_type: EncoderCommandType,
-    response_ch: Sender<io::Result<CommandResponse>>,
-}
+impl Command for EncoderCommand {
+    type Response = EncoderResponse;
+    type Handler = Rf256Handler;
 
-impl EncoderCommand {
-    pub fn new(
-        axis: u8,
-        command_type: EncoderCommandType,
-        response_ch: Sender<io::Result<CommandResponse>>,
-    ) -> Self {
-        Self {
-            axis,
-            command_type,
-            response_ch,
+    fn execute(self, handler: &mut Self::Handler) -> std::io::Result<Self::Response> {
+        match self {
+            EncoderCommand::GetPosition { axis } => {
+                let mut attempts = 0;
+                loop {
+                    match handler.get_position(axis) {
+                        Ok(position) => return Ok(EncoderResponse::Position { axis, position }),
+                        Err(_) if attempts < MAX_RETRIES => {
+                            attempts += 1;
+                        }
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    }
+                }
+            }
         }
     }
-
-    pub fn command_type(&self) -> &EncoderCommandType {
-        &self.command_type
-    }
-
-    pub fn response_ch(self) -> Sender<io::Result<CommandResponse>> {
-        self.response_ch
-    }
-
-    pub fn axis(&self) -> u8 {
-        self.axis
-    }
-}
-
-#[derive(Debug)]
-pub enum CommandResponse {
-    None,
-    Position(f32),
-    Id(u8),
-    Ok,
 }

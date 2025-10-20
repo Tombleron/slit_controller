@@ -1,54 +1,59 @@
 use std::io;
 
 use standa::command::state::StateParams;
-use tokio::sync::oneshot::Sender;
+use utilities::command_executor::Command;
 
-pub enum GetMotorAttribute {
-    State,
-}
+use crate::command_executor::motor::StandaHandler;
 
-pub enum SetMotorAttribute {
-    Velocity(u32),
-    Acceleration(u16),
-    Deceleration(u16),
-}
-
-pub enum MotorCommandType {
-    Get(GetMotorAttribute),
-    Set(SetMotorAttribute),
+#[derive(Clone)]
+pub enum MotorCommand {
+    GetState,
+    SetVelocity(u32),
+    SetAcceleration(u16),
+    SetDeceleration(u16),
     Stop,
     Move { steps: i32, substeps: i16 },
     Reconnect,
 }
 
-pub struct MotorCommand {
-    command_type: MotorCommandType,
-    response_ch: Sender<io::Result<CommandResponse>>,
-}
-
-impl MotorCommand {
-    pub fn new(
-        command_type: MotorCommandType,
-        response_ch: Sender<io::Result<CommandResponse>>,
-    ) -> Self {
-        Self {
-            command_type,
-            response_ch,
-        }
-    }
-
-    pub fn command_type(&self) -> &MotorCommandType {
-        &self.command_type
-    }
-
-    pub fn response_ch(self) -> Sender<io::Result<CommandResponse>> {
-        self.response_ch
-    }
-}
-
 #[derive(Debug)]
-pub enum CommandResponse {
+pub enum MotorResponse {
     None,
     State(StateParams),
     Ok,
+}
+
+impl Command for MotorCommand {
+    type Response = MotorResponse;
+    type Handler = StandaHandler;
+
+    fn execute(self, handler: &mut Self::Handler) -> io::Result<Self::Response> {
+        match self {
+            MotorCommand::GetState => {
+                let state = handler.get_state()?;
+                Ok(MotorResponse::State(state))
+            }
+            MotorCommand::SetVelocity(velocity) => {
+                handler.set_velocity(velocity)?;
+                Ok(MotorResponse::Ok)
+            }
+            MotorCommand::SetAcceleration(acceleration) => {
+                handler.set_acceleration(acceleration)?;
+                Ok(MotorResponse::Ok)
+            }
+            MotorCommand::SetDeceleration(deceleration) => {
+                handler.set_deceleration(deceleration)?;
+                Ok(MotorResponse::Ok)
+            }
+            MotorCommand::Stop => {
+                handler.stop()?;
+                Ok(MotorResponse::Ok)
+            }
+            MotorCommand::Move { steps, substeps } => {
+                handler.move_relative(steps, substeps)?;
+                Ok(MotorResponse::Ok)
+            }
+            MotorCommand::Reconnect => todo!(),
+        }
+    }
 }

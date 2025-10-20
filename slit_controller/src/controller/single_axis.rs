@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     command_executor::{
-        encoder::command_sender::Rf256CommandSender, motor::command_sender::StandaCommandSender,
+        encoder::command_sender::EncoderCommandSender, motor::command_sender::StandaCommandSender,
         temperature::command_sender::TridCommandSender,
     },
     controller::move_thread::MoveThread,
@@ -17,7 +17,8 @@ use crate::{
 };
 use standa::command::state::StateParams;
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
+use utilities::motor_controller::{Motor as _, MotorController};
 
 #[derive(Debug, Clone, Copy)]
 pub struct MovementParams {
@@ -43,18 +44,18 @@ impl Default for MovementParams {
 pub struct SingleAxis {
     axis: u8,
 
-    rf256_cs: Rf256CommandSender,
+    rf256_cs: EncoderCommandSender,
     trid_cs: TridCommandSender,
     standa_cs: StandaCommandSender,
 
-    move_thread: Option<JoinHandle<()>>,
+    move_thread: Option<JoinHandle<Result<(), String>>>,
     moving: Arc<AtomicBool>,
 }
 
 impl SingleAxis {
     pub fn new(
         axis: u8,
-        rf256_cs: Rf256CommandSender,
+        rf256_cs: EncoderCommandSender,
         trid_cs: TridCommandSender,
         standa_cs: StandaCommandSender,
     ) -> Self {
@@ -70,16 +71,12 @@ impl SingleAxis {
         }
     }
 
-    pub fn get_rf256_cs(&self) -> Rf256CommandSender {
+    pub fn get_rf256_cs(&self) -> EncoderCommandSender {
         self.rf256_cs.clone()
     }
 
     pub fn get_trid_cs(&self) -> TridCommandSender {
         self.trid_cs.clone()
-    }
-
-    pub async fn reconnect_standa_client(&self) -> io::Result<()> {
-        self.standa_cs.reconnect().await
     }
 
     pub async fn temperature(&self) -> io::Result<f32> {
@@ -93,135 +90,10 @@ impl SingleAxis {
         result
     }
 
-    pub async fn position_with_retries(&self, retries: u8) -> io::Result<f32> {
-        self.rf256_cs
-            .read_position_with_retries(self.axis, retries)
-            .await
-            .map_err(|e| {
-                warn!("Failed to read position with retries: {}", e);
-                io::Error::new(io::ErrorKind::Other, e)
-            })
-    }
-
-    pub async fn position(&self) -> io::Result<f32> {
-        self.rf256_cs.read_position(self.axis).await
-    }
-
-    pub fn is_moving(&self) -> bool {
-        let moving = self.moving.load(Ordering::SeqCst);
-        debug!("Axis {} is moving: {}", self.axis, moving);
-        moving
-    }
-
-    pub async fn state(&self) -> io::Result<StateParams> {
-        self.standa_cs.get_state().await
-    }
-
-    pub async fn update_motor_settings(&self, params: MovementParams) -> io::Result<()> {
-        if let Err(e) = self.standa_cs.set_velocity(params.velocity).await {
-            warn!("Failed to set velocity: {}", e);
-            return Err(e);
-        }
-
-        if let Err(e) = self.standa_cs.set_acceleration(params.acceleration).await {
-            warn!("Failed to set acceleration: {}", e);
-            return Err(e);
-        }
-
-        if let Err(e) = self.standa_cs.set_deceleration(params.deceleration).await {
-            warn!("Failed to set deceleration: {}", e);
-            return Err(e);
-        }
-
-        Ok(())
-    }
-
-    pub async fn stop(&mut self) -> Result<(), String> {
-        debug!("Attempting to stop axis {}", self.axis);
-
-        self.standa_cs
-            .stop()
-            .await
-            .map_err(|e| format!("Failed to stop axis {}: {}", self.axis, e))?;
-
-        self.moving.store(false, Ordering::SeqCst);
-
-        if let Some(handle) = self.move_thread.take() {
-            debug!("Joining move thread for id {}", self.axis);
-            match handle.await {
-                Ok(_) => debug!("Successfully joined move thread"),
-                Err(e) => {
-                    warn!("Failed to join move thread: {:?}", e);
-                    return Err("Failed to join move thread".to_string());
-                }
-            }
-        } else {
-            debug!("No move thread to join for id {}", self.axis);
-        }
-
-        info!("Successfully stopped axis {}", self.axis);
-        Ok(())
-    }
-
-    pub async fn move_to_position(
-        &mut self,
-        target: f32,
-        params: MovementParams,
-    ) -> Result<(), String> {
-        debug!(
-            "Attempting to move axis {} to position {}",
-            self.axis, target
-        );
-        if self.moving.load(Ordering::SeqCst) {
-            warn!(
-                "Attempted to move id {} which is already in motion",
-                self.axis
-            );
-            return Err("Axis is already in motion".to_string());
-        }
-
-        info!("Moving id {} to position {}", self.axis, target);
-        self.update_motor_settings(params)
-            .await
-            .map_err(|e| format!("Failed to update motor settings: {}", e))?;
-
-        debug!("Setting moving flag to true");
-        self.moving.store(true, Ordering::SeqCst);
-
-        let rf256_axis = self.axis;
-        let rf256_cs = self.rf256_cs.clone();
-        let standa_cs = self.standa_cs.clone();
-        let moving = Arc::clone(&self.moving);
-
-        debug!("Spawning thread for axis {} movement", self.axis);
-        let handle = tokio::spawn(async move {
-            let mut move_thread = MoveThread::new(
-                rf256_cs,
-                standa_cs,
-                rf256_axis,
-                target,
-                params.position_window,
-                params.time_limit,
-                moving,
-            );
-
-            move_thread.run().await
-        });
-
-        debug!("Storing thread handle");
-        self.move_thread = Some(handle);
-
-        info!(
-            "Successfully initiated movement of axis {} to position {}",
-            self.axis, target
-        );
-        Ok(())
-    }
-
     pub async fn get_axis_state(&self) -> io::Result<AxisState> {
         let (state, position, temperature) = tokio::join!(
             self.standa_cs.get_state(),
-            self.position_with_retries(5),
+            self.get_position(),
             self.temperature()
         );
 
@@ -238,8 +110,102 @@ impl SingleAxis {
 
 impl Drop for SingleAxis {
     fn drop(&mut self) {
-        if self.moving.load(Ordering::SeqCst) {
-            let _ = self.stop();
+        self.set_moving(false);
+    }
+}
+
+impl MotorController for SingleAxis {
+    type MovementParameters = MovementParams;
+    type MotorState = StateParams;
+
+    async fn stop(&mut self) -> Result<(), String> {
+        self.moving.store(false, Ordering::SeqCst);
+
+        self.standa_cs
+            .stop()
+            .await
+            .map_err(|e| format!("Failed to stop axis {}: {}", self.axis, e))?;
+
+        if let Some(handle) = self.move_thread.take() {
+            match handle.await {
+                Ok(_) => {}
+                Err(_) => {
+                    return Err("Failed to join move thread".to_string());
+                }
+            }
         }
+
+        Ok(())
+    }
+
+    async fn update_parameters(
+        &mut self,
+        parameters: &Self::MovementParameters,
+    ) -> Result<(), String> {
+        self.standa_cs
+            .set_velocity(parameters.velocity)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        self.standa_cs
+            .set_acceleration(parameters.acceleration)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        self.standa_cs
+            .set_deceleration(parameters.deceleration)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    async fn get_state(&self) -> Result<Self::MotorState, String> {
+        self.standa_cs.get_state().await.map_err(|e| e.to_string())
+    }
+    async fn get_position(&self) -> Result<f32, String> {
+        self.rf256_cs
+            .get_position(self.axis)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    fn is_moving(&self) -> bool {
+        self.moving.load(Ordering::Relaxed)
+    }
+
+    fn set_moving(&mut self, is_moving: bool) {
+        self.moving.store(is_moving, Ordering::Relaxed);
+    }
+
+    fn init_motion(
+        &mut self,
+        target_position: f32,
+        parameters: &Self::MovementParameters,
+    ) -> Result<(), String> {
+        let rf256_axis = self.axis;
+        let rf256_cs = self.rf256_cs.clone();
+        let standa_cs = self.standa_cs.clone();
+        let moving = Arc::clone(&self.moving);
+        let position_window = parameters.position_window;
+        let time_limit = parameters.time_limit;
+
+        let handle = tokio::spawn(async move {
+            let mut move_thread = MoveThread::new(
+                rf256_cs,
+                standa_cs,
+                rf256_axis,
+                target_position,
+                position_window,
+                time_limit,
+                moving,
+            );
+
+            move_thread.run().await
+        });
+
+        self.move_thread = Some(handle);
+
+        Ok(())
     }
 }

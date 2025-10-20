@@ -5,14 +5,17 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use trid::Trid;
+use utilities::command_executor::CommandExecutor;
+use utilities::lazy_tcp::LazyTcpStream;
 
-use crate::command_executor::encoder::Rf256CommandExecutor;
-use crate::command_executor::motor::StandaCommandExecutor;
-use crate::command_executor::temperature::TridCommandExecutor;
+use crate::command_executor::encoder::{command_sender::EncoderCommandSender, Rf256Handler};
+use crate::command_executor::motor::command_sender::StandaCommandSender;
+use crate::command_executor::motor::StandaHandler;
+use crate::command_executor::temperature::command_sender::TridCommandSender;
+use crate::command_executor::temperature::TridHandler;
 use crate::command_executor::{CONNECT_TIMEOUT, READ_TIMEOUT, WRITE_TIMEOUT};
 use crate::controller::multi_axis::{MultiAxis, MultiAxisConfig};
 use crate::controller::single_axis::SingleAxis;
-use crate::lazy_tcp::LazyTcpStream;
 use crate::models::{Command, CommandEnvelope, CommandError, CommandResponse};
 
 const MAX_RETRIES: u32 = 1;
@@ -54,7 +57,10 @@ pub async fn run_controller(
     Ok(())
 }
 
-fn create_standa_command_executor(standa_ip: &str, standa_port: u16) -> StandaCommandExecutor {
+fn create_standa_command_executor(
+    standa_ip: &str,
+    standa_port: u16,
+) -> CommandExecutor<StandaHandler> {
     let tcp_stream = LazyTcpStream::new(
         SocketAddr::new(standa_ip.parse().unwrap(), standa_port),
         1,
@@ -64,38 +70,42 @@ fn create_standa_command_executor(standa_ip: &str, standa_port: u16) -> StandaCo
     );
 
     let standa = Standa::new();
+    let handler = StandaHandler::new(standa, tcp_stream);
 
-    StandaCommandExecutor::new(tcp_stream, standa)
+    CommandExecutor::new(handler)
 }
 
 pub fn create_controller(
     config: MultiAxisConfig,
 ) -> (
-    Rf256CommandExecutor,
-    TridCommandExecutor,
-    StandaCommandExecutor,
-    StandaCommandExecutor,
-    StandaCommandExecutor,
-    StandaCommandExecutor,
+    CommandExecutor<Rf256Handler>,
+    CommandExecutor<TridHandler>,
+    CommandExecutor<StandaHandler>,
+    CommandExecutor<StandaHandler>,
+    CommandExecutor<StandaHandler>,
+    CommandExecutor<StandaHandler>,
     MultiAxis,
 ) {
     let rf256_socket_addr = SocketAddr::new(config.rf256_ip.parse().unwrap(), config.rf256_port);
-    let rf256_tcp_steam = LazyTcpStream::new(
+    let rf256_tcp_stream = LazyTcpStream::new(
         rf256_socket_addr,
         MAX_RETRIES,
         READ_TIMEOUT,
         WRITE_TIMEOUT,
         CONNECT_TIMEOUT,
     );
-    let rf256_command_executor = Rf256CommandExecutor::new(
-        rf256_tcp_steam,
+
+    let rf256_handler = Rf256Handler::new(
+        rf256_tcp_stream,
         [
-            Rf256::new(config.upper_rf256_id),
-            Rf256::new(config.lower_rf256_id),
-            Rf256::new(config.right_rf256_id),
-            Rf256::new(config.left_rf256_id),
+            Rf256::new(config.upper_axis.rf256_id),
+            Rf256::new(config.lower_axis.rf256_id),
+            Rf256::new(config.right_axis.rf256_id),
+            Rf256::new(config.left_axis.rf256_id),
         ],
     );
+    let rf256_command_executor = CommandExecutor::new(rf256_handler);
+    let encoder_command_sender = EncoderCommandSender::new(rf256_command_executor.sender());
 
     let trid_socket_addr = SocketAddr::new(config.trid_ip.parse().unwrap(), config.trid_port);
     let trid_tcp_stream = LazyTcpStream::new(
@@ -105,58 +115,62 @@ pub fn create_controller(
         WRITE_TIMEOUT,
         CONNECT_TIMEOUT,
     );
-    let trid_command_executor = TridCommandExecutor::new(
+
+    let trid_handler = TridHandler::new(
         trid_tcp_stream,
         [
-            Trid::new(config.upper_trid_id),
-            Trid::new(config.lower_trid_id),
-            Trid::new(config.right_trid_id),
-            Trid::new(config.left_trid_id),
+            Trid::new(1, config.upper_axis.trid_id as u16),
+            Trid::new(1, config.lower_axis.trid_id as u16),
+            Trid::new(1, config.right_axis.trid_id as u16),
+            Trid::new(1, config.left_axis.trid_id as u16),
         ],
     );
+    let trid_command_executor = CommandExecutor::new(trid_handler);
+    let trid_command_sender = TridCommandSender::new(trid_command_executor.sender());
 
     let upper_standa_executor =
-        create_standa_command_executor(&config.upper_standa_ip, config.upper_standa_port);
+        create_standa_command_executor(&config.upper_axis.standa_ip, config.upper_axis.standa_port);
     let lower_standa_executor =
-        create_standa_command_executor(&config.lower_standa_ip, config.lower_standa_port);
+        create_standa_command_executor(&config.lower_axis.standa_ip, config.lower_axis.standa_port);
     let right_standa_executor =
-        create_standa_command_executor(&config.right_standa_ip, config.right_standa_port);
+        create_standa_command_executor(&config.right_axis.standa_ip, config.right_axis.standa_port);
     let left_standa_executor =
-        create_standa_command_executor(&config.left_standa_ip, config.left_standa_port);
+        create_standa_command_executor(&config.left_axis.standa_ip, config.left_axis.standa_port);
+
+    let upper_standa_command_sender = StandaCommandSender::new(upper_standa_executor.sender());
+    let lower_standa_command_sender = StandaCommandSender::new(lower_standa_executor.sender());
+    let right_standa_command_sender = StandaCommandSender::new(right_standa_executor.sender());
+    let left_standa_command_sender = StandaCommandSender::new(left_standa_executor.sender());
 
     let upper_axis = SingleAxis::new(
         0,
-        rf256_command_executor.sender(),
-        trid_command_executor.sender(),
-        upper_standa_executor.sender(),
+        encoder_command_sender.clone(),
+        trid_command_sender.clone(),
+        upper_standa_command_sender,
     );
 
     let lower_axis = SingleAxis::new(
         1,
-        rf256_command_executor.sender(),
-        trid_command_executor.sender(),
-        lower_standa_executor.sender(),
+        encoder_command_sender.clone(),
+        trid_command_sender.clone(),
+        lower_standa_command_sender,
     );
 
     let right_axis = SingleAxis::new(
         2,
-        rf256_command_executor.sender(),
-        trid_command_executor.sender(),
-        right_standa_executor.sender(),
+        encoder_command_sender.clone(),
+        trid_command_sender.clone(),
+        right_standa_command_sender,
     );
 
     let left_axis = SingleAxis::new(
         3,
-        rf256_command_executor.sender(),
-        trid_command_executor.sender(),
-        left_standa_executor.sender(),
+        encoder_command_sender.clone(),
+        trid_command_sender.clone(),
+        left_standa_command_sender,
     );
 
-    let multi_axis = MultiAxis::new(
-        [upper_axis, lower_axis, right_axis, left_axis],
-        rf256_command_executor.sender(),
-        trid_command_executor.sender(),
-    );
+    let multi_axis = MultiAxis::new([upper_axis, lower_axis, right_axis, left_axis]);
 
     return (
         rf256_command_executor,

@@ -1,51 +1,27 @@
+use crate::command_executor::temperature::TridHandler;
 use std::io;
+use utilities::command_executor::Command;
 
-use tokio::sync::oneshot::Sender;
-
-pub enum GetTridAttribute {
-    Temperature,
+#[derive(Clone)]
+pub enum TridCommand {
+    GetTemperature { axis: u8 },
 }
 
-pub enum TridCommandType {
-    Get(GetTridAttribute),
-    Reconnect,
-}
+impl Command for TridCommand {
+    type Response = TridResponse;
+    type Handler = TridHandler;
 
-pub struct TridCommand {
-    trid_id: u8,
-    command_type: TridCommandType,
-    response_ch: Sender<io::Result<CommandResponse>>,
-}
-
-impl TridCommand {
-    pub fn new(
-        trid_id: u8,
-        command_type: TridCommandType,
-        response_ch: Sender<io::Result<CommandResponse>>,
-    ) -> Self {
-        Self {
-            trid_id,
-            command_type,
-            response_ch,
+    fn execute(self, handler: &mut Self::Handler) -> io::Result<Self::Response> {
+        match self {
+            TridCommand::GetTemperature { axis } => handler
+                .get_temperature(axis)
+                .map(|temperature| TridResponse::Temperature(temperature)),
         }
-    }
-
-    pub fn trid_id(&self) -> u8 {
-        self.trid_id
-    }
-
-    pub fn command_type(&self) -> &TridCommandType {
-        &self.command_type
-    }
-
-    pub fn response_ch(self) -> Sender<io::Result<CommandResponse>> {
-        self.response_ch
     }
 }
 
 #[derive(Debug)]
-pub enum CommandResponse {
-    None,
+pub enum TridResponse {
     Temperature(f32),
     Ok,
 }

@@ -1,3 +1,4 @@
+use super::commands::parse_command;
 use anyhow::{anyhow, Result};
 use standa::command::state::StateParams;
 use std::os::unix::fs::PermissionsExt;
@@ -6,7 +7,6 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, Mutex};
 
-use crate::commands::parse_command;
 use crate::models::{
     AxisProperty, Command, CommandEnvelope, CommandError, CommandResponse, Limit, SharedState,
     State,

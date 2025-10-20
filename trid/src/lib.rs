@@ -3,11 +3,12 @@ use std::io::{Read, Write};
 #[derive(Debug, Clone, Copy)]
 pub struct Trid {
     device_id: u8,
+    axis: u16,
 }
 
 impl Trid {
-    pub fn new(device_id: u8) -> Self {
-        Trid { device_id }
+    pub fn new(device_id: u8, axis: u16) -> Self {
+        Trid { device_id, axis }
     }
 
     pub fn get_device_id(&self) -> u8 {
@@ -17,6 +18,7 @@ impl Trid {
     pub fn set_device_id(&mut self, device_id: u8) {
         self.device_id = device_id;
     }
+
     pub fn read_holding_register(
         &self,
         sender: &mut (impl Write + Read),
@@ -89,8 +91,8 @@ impl Trid {
         crc
     }
 
-    pub fn read_data(&self, sender: &mut (impl Write + Read), axis: u16) -> std::io::Result<f32> {
-        let result = self.read_holding_register(sender, axis)?;
+    pub fn read_data(&self, sender: &mut (impl Write + Read)) -> std::io::Result<f32> {
+        let result = self.read_holding_register(sender, self.axis)?;
         if result.len() < 2 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,

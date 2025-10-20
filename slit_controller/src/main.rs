@@ -1,28 +1,37 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use tokio::sync::{mpsc, Mutex};
 
 use slit_controller::{
-    communication::run_communication_layer,
-    controller_service::{create_controller, run_controller},
+    communication::communication::run_communication_layer,
+    config::{create_default_config, init_config},
+    controller::{
+        controller_service::{create_controller, run_controller},
+        state_monitor::run_state_monitor,
+    },
     logging,
     models::SharedState,
-    state_monitor::run_state_monitor,
 };
 use tracing::info;
 
+fn should_create_config() -> bool {
+    std::env::var("CREATE_CONFIG")
+        .map(|val| val == "1" || val.to_lowercase() == "true")
+        .unwrap_or(false)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    if let Ok(create_config) = std::env::var("CREATE_CONFIG") {
-        if create_config == "1" || create_config.to_lowercase() == "true" {
-            info!("Creating default configuration file...");
-            slit_controller::config::save_default_config()?;
-            info!("Default configuration saved. Exiting.");
-            return Ok(());
-        }
-    }
-    let config = slit_controller::config::load_config()?;
-
     logging::init();
+
+    if should_create_config() {
+        create_default_config(None::<PathBuf>)?;
+    }
+
+    let (_config_manager, config) = init_config().map_err(|e| {
+        eprintln!("Failed to load configuration: {}", e);
+        eprintln!("Run with CREATE_CONFIG=1 to create a default configuration file.");
+        e
+    })?;
 
     info!("Starting slit controller...");
     let (command_tx, command_rx) = mpsc::channel(100);
@@ -39,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
         mut right_standa_command_executor,
         mut left_standa_command_executor,
         multi_axis_controller,
-    ) = create_controller(config.multi_axis_config);
+    ) = create_controller(config);
 
     let multi_axis = Arc::new(Mutex::new(multi_axis_controller));
     let multi_axis_clone = Arc::clone(&multi_axis);
