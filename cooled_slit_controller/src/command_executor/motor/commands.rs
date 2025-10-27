@@ -1,53 +1,41 @@
+use em2rs::StateParams;
 use std::io;
+use utilities::command_executor::Command;
 
-use em2rs::Em2rsState;
-use tokio::sync::oneshot::Sender;
+use crate::command_executor::motor::Em2rsHandler;
 
-pub enum GetMotorAttribute {
-    State,
-}
-
-pub enum SetMotorAttribute {
-    Velocity(u16),
-    Acceleration(u16),
-    Deceleration(u16),
-}
-
-pub enum MotorCommandType {
-    Get(GetMotorAttribute),
-    Set(SetMotorAttribute),
-    Stop,
-    Move { steps: i32 },
-    Reconnect,
+#[derive(Clone)]
+pub enum MotorCommand {
+    GetState { axis: usize },
+    SetVelocity { axis: usize, velocity: u16 },
+    SetAcceleration { axis: usize, acceleration: u16 },
+    SetDeceleration { axis: usize, deceleration: u16 },
+    Stop { axis: usize },
+    Move { axis: usize, steps: i32 },
 }
 
 pub enum CommandResponse {
     None,
-    State(Em2rsState),
+    State(StateParams),
     Ok,
 }
 
-pub struct MotorCommand {
-    command_type: MotorCommandType,
-    response_ch: Sender<io::Result<CommandResponse>>,
-}
+impl Command for MotorCommand {
+    type Response = CommandResponse;
+    type Handler = Em2rsHandler;
 
-impl MotorCommand {
-    pub fn new(
-        command_type: MotorCommandType,
-        response_ch: Sender<io::Result<CommandResponse>>,
-    ) -> Self {
-        Self {
-            command_type,
-            response_ch,
+    fn execute(self, handler: &mut Self::Handler) -> io::Result<Self::Response> {
+        match self {
+            MotorCommand::GetState { axis } => handler.get_state(axis),
+            MotorCommand::SetVelocity { axis, velocity } => handler.set_velocity(axis, velocity),
+            MotorCommand::SetAcceleration { axis, acceleration } => {
+                handler.set_acceleration(axis, acceleration)
+            }
+            MotorCommand::SetDeceleration { axis, deceleration } => {
+                handler.set_deceleration(axis, deceleration)
+            }
+            MotorCommand::Stop { axis } => handler.stop(axis),
+            MotorCommand::Move { axis, steps } => handler.move_relative(axis, steps),
         }
-    }
-
-    pub fn command_type(&self) -> &MotorCommandType {
-        &self.command_type
-    }
-
-    pub fn response_ch(self) -> Sender<io::Result<CommandResponse>> {
-        self.response_ch
     }
 }

@@ -4,7 +4,7 @@ Requires=slit-controller.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/systemctl restart slit-controller.service
+ExecStart=/opt/slit_controller/scripts/safe_restart.sh
 
 [Install]
 WantedBy=multi-user.target

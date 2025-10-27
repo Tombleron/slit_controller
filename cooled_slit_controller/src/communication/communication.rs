@@ -1,26 +1,29 @@
-use super::commands::parse_command;
-use anyhow::{anyhow, Result};
-use standa::command::state::StateParams;
+use anyhow::Result;
+use anyhow::anyhow;
+use em2rs::StateParams;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
-use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::{mpsc, Mutex};
+use std::{path::Path, sync::Arc};
+use tokio::io::AsyncReadExt as _;
+use tokio::io::AsyncWriteExt as _;
+use tokio::sync::{Mutex, mpsc};
 
+use crate::communication::commands::parse_command;
 use crate::models::{
     AxisProperty, Command, CommandEnvelope, CommandError, CommandResponse, Limit, SharedState,
     State,
 };
 
 fn state_params_to_state(state_params: &StateParams) -> (State, Limit) {
-    let state = match (state_params.is_moving(), state_params.is_error()) {
-        (true, false) => State::Moving,
-        (false, true) => State::Fault,
-        (false, false) => State::On,
-        (true, true) => State::Fault, // If moving and error, treat as fault
+    let state = if state_params.is_moving() {
+        State::Moving
+    } else {
+        State::On
     };
 
-    let limit = match (state_params.left_switch(), state_params.right_switch()) {
+    let limit = match (
+        state_params.low_limit_triggered(),
+        state_params.high_limit_triggered(),
+    ) {
         (true, true) => Limit::Both,
         (true, false) => Limit::Lower,
         (false, true) => Limit::Upper,
@@ -68,22 +71,22 @@ async fn handle_get_command(envelop: CommandEnvelope, shared_state: Arc<Mutex<Sh
     });
 }
 
-const SOCKET_PATH: &str = "/tmp/slit_controller.sock";
+const SOCKET_NAME: &str = "/tmp/cooled_slit_controller.sock";
 
 pub async fn run_communication_layer(
     command_tx: mpsc::Sender<CommandEnvelope>,
     shared_state: Arc<Mutex<SharedState>>,
 ) -> Result<()> {
     // Remove existing socket file if it exists to prevent "Address already in use" error
-    if Path::new(SOCKET_PATH).exists() {
-        std::fs::remove_file(SOCKET_PATH)
+    if Path::new(SOCKET_NAME).exists() {
+        std::fs::remove_file(SOCKET_NAME)
             .map_err(|e| anyhow!("Failed to remove existing socket file: {}", e))?;
     }
 
-    let listener = tokio::net::UnixListener::bind(SOCKET_PATH)
+    let listener = tokio::net::UnixListener::bind(SOCKET_NAME)
         .map_err(|e| anyhow!("Failed to bind to socket: {}", e))?;
     let permissions = std::fs::Permissions::from_mode(0o666);
-    std::fs::set_permissions(SOCKET_PATH, permissions)
+    std::fs::set_permissions(SOCKET_NAME, permissions)
         .map_err(|e| anyhow!("Failed to set permissions: {}", e))?;
 
     loop {

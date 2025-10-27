@@ -1,0 +1,37 @@
+sensors_ip = "127.0.0.1"
+sensors_port = 50051
+em2rs_ip = "127.0.0.1"
+em2rs_port = 50052
+icpcon_id = 1
+
+[upper_axis]
+lir_id = 1
+lir_step = 0.05
+em2rs_id = 1
+em2rs_low_limit = 0
+em2rs_high_limit = 100
+steps_per_mm = 100
+
+[lower_axis]
+lir_id = 2
+lir_step = 0.05
+em2rs_id = 2
+em2rs_low_limit = 0
+em2rs_high_limit = 100
+steps_per_mm = 100
+
+[left_axis]
+lir_id = 3
+lir_step = 0.05
+em2rs_id = 3
+em2rs_low_limit = 0
+em2rs_high_limit = 100
+steps_per_mm = 100
+
+[right_axis]
+lir_id = 4
+lir_step = 0.05
+em2rs_id = 4
+em2rs_low_limit = 0
+em2rs_high_limit = 100
+steps_per_mm = 100

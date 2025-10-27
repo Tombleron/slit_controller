@@ -1,0 +1,10 @@
+[Unit]
+Description=Restart Cooled Slit Controller Service
+Requires=cooled-slit-controller.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/cooled_slit_controller/scripts/safe_restart.sh
+
+[Install]
+WantedBy=multi-user.target

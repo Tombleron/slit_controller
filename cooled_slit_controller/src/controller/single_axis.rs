@@ -1,5 +1,4 @@
 use std::{
-    io,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -7,17 +6,19 @@ use std::{
     time::Duration,
 };
 
-use em2rs::Em2rsState;
-use icpcon::M7015;
+use em2rs::StateParams;
 use tokio::task::JoinHandle;
+use utilities::motor_controller::{Motor as _, MotorController};
 
 use crate::{
     command_executor::{
         motor::command_sender::Em2rsCommandSender, sensors::command_sender::SensorsCommandSender,
     },
     controller::move_thread::MoveThread,
+    models::AxisState,
 };
 
+#[derive(Debug)]
 pub struct MoveArgs {
     pub acceleration: u16,
     pub deceleration: u16,
@@ -26,13 +27,25 @@ pub struct MoveArgs {
     pub time_limit: Duration,
 }
 
+impl Default for MoveArgs {
+    fn default() -> Self {
+        Self {
+            acceleration: 1000,
+            deceleration: 1000,
+            velocity: 1000,
+            position_window: 0.001,
+            time_limit: Duration::from_secs(60),
+        }
+    }
+}
+
 pub struct SingleAxis {
-    axis: u8,
+    axis: usize,
 
-    m7015_cs: SensorsCommandSender,
-    em2rs_cs: Em2rsCommandSender,
+    sensors_cs: SensorsCommandSender,
+    motor_cs: Em2rsCommandSender,
 
-    move_thread: Option<JoinHandle<io::Result<()>>>,
+    move_thread: Option<JoinHandle<Result<(), String>>>,
     moving: Arc<AtomicBool>,
 
     steps_per_mm: u32,
@@ -40,85 +53,120 @@ pub struct SingleAxis {
 
 impl SingleAxis {
     pub fn new(
-        axis: u8,
+        axis: usize,
         steps_per_mm: u32,
-        m7015_cs: SensorsCommandSender,
-        em2rs_cs: Em2rsCommandSender,
+        sensors_cs: SensorsCommandSender,
+        motor_cs: Em2rsCommandSender,
     ) -> Self {
         Self {
             axis,
-            m7015_cs,
-            em2rs_cs,
+            sensors_cs,
+            motor_cs,
             move_thread: None,
             moving: Arc::new(AtomicBool::new(false)),
             steps_per_mm,
         }
     }
 
-    pub fn get_m7015_cs(&self) -> SensorsCommandSender {
-        self.m7015_cs.clone()
+    pub async fn get_temperature(&self) -> Result<f32, String> {
+        self.sensors_cs
+            .get_temperature(self.axis as u8)
+            .await
+            .map_err(|e| format!("Failed to get temperature: {}", e))
     }
 
-    pub fn get_em2rs_cs(&self) -> Em2rsCommandSender {
-        self.em2rs_cs.clone()
-    }
+    pub async fn get_axis_state(&self) -> AxisState {
+        let (state, position, temperature) = tokio::join!(
+            self.get_state(),
+            self.get_position(),
+            self.get_temperature()
+        );
 
-    pub async fn position(&self) -> io::Result<f32> {
-        self.m7015_cs.read_position(self.axis).await
-    }
+        let is_moving = Ok(self.moving.load(Ordering::Relaxed));
 
-    pub async fn temperature(&self) -> io::Result<f32> {
-        self.m7015_cs.read_temperature(self.axis).await
+        AxisState {
+            state,
+            position,
+            temperature,
+            is_moving,
+        }
     }
+}
 
-    pub async fn state(&self) -> io::Result<Em2rsState> {
-        self.em2rs_cs.get_state().await
-    }
+impl MotorController for SingleAxis {
+    type MovementParameters = MoveArgs;
+    type MotorState = StateParams;
 
-    pub fn is_moving(&self) -> bool {
-        self.moving.load(Ordering::SeqCst)
-    }
-
-    pub async fn update_motor_settings(&self, args: &MoveArgs) -> io::Result<()> {
-        self.em2rs_cs.set_acceleration(args.acceleration).await?;
-        self.em2rs_cs.set_deceleration(args.deceleration).await?;
-        self.em2rs_cs.set_velocity(args.velocity as u16).await?;
-        Ok(())
-    }
-
-    pub async fn stop(&mut self) -> io::Result<()> {
+    async fn stop(&mut self) -> Result<(), String> {
         if self.is_moving() {
-            self.em2rs_cs.stop().await?;
+            self.motor_cs
+                .stop(self.axis)
+                .await
+                .map_err(|e| format!("Failed to stop motor: {}", e))?;
 
             if let Some(handle) = self.move_thread.take() {
                 handle
-                    .await?
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                    .await
+                    .map_err(|e| format!("Failed to stop move thread: {}", e))??;
             }
             self.moving.store(false, Ordering::SeqCst);
         }
         Ok(())
     }
 
-    pub async fn move_to(&mut self, target_position: f32, args: MoveArgs) -> io::Result<()> {
-        if self.is_moving() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Axis is already moving",
-            ));
-        }
+    async fn update_parameters(
+        &mut self,
+        parameters: &Self::MovementParameters,
+    ) -> Result<(), String> {
+        self.motor_cs
+            .set_acceleration(self.axis, parameters.acceleration)
+            .await
+            .map_err(|e| format!("Failed to set acceleration: {}", e))?;
+        self.motor_cs
+            .set_deceleration(self.axis, parameters.deceleration)
+            .await
+            .map_err(|e| format!("Failed to set deceleration: {}", e))?;
+        self.motor_cs
+            .set_velocity(self.axis, parameters.velocity as u16)
+            .await
+            .map_err(|e| format!("Failed to set velocity: {}", e))?;
+        Ok(())
+    }
 
-        self.update_motor_settings(&args).await?;
+    async fn get_state(&self) -> Result<Self::MotorState, String> {
+        self.motor_cs
+            .get_state(self.axis)
+            .await
+            .map_err(|e| format!("Failed to get state: {}", e))
+    }
 
-        self.moving.store(true, Ordering::SeqCst);
+    async fn get_position(&self) -> Result<f32, String> {
+        self.sensors_cs
+            .get_position(self.axis as u8)
+            .await
+            .map_err(|e| format!("Failed to get position: {}", e))
+    }
 
+    fn is_moving(&self) -> bool {
+        self.moving.load(Ordering::Relaxed)
+    }
+
+    fn set_moving(&mut self, is_moving: bool) {
+        self.moving.store(is_moving, Ordering::Relaxed);
+    }
+
+    fn init_motion(
+        &mut self,
+        target: f32,
+        parameters: &Self::MovementParameters,
+    ) -> Result<(), String> {
         let mut move_thread = MoveThread::new(
             self.axis,
-            self.m7015_cs.clone(),
-            self.em2rs_cs.clone(),
-            target_position,
-            args.position_window,
-            args.time_limit,
+            self.sensors_cs.clone(),
+            self.motor_cs.clone(),
+            target,
+            parameters.position_window,
+            parameters.time_limit,
             self.moving.clone(),
             self.steps_per_mm,
         );

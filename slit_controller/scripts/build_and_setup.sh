@@ -11,6 +11,7 @@ cargo build --release --package slit_controller
 
 sudo mkdir -p /opt/slit_controller/bin
 sudo mkdir -p /opt/slit_controller/config
+sudo mkdir -p /opt/slit_controller/scripts
 sudo mkdir -p /var/log/slit_controller
 
 echo "Checking if slit-controller service is running..."
@@ -25,6 +26,10 @@ fi
 echo "Copying executable to /opt/slit_controller/bin..."
 sudo cp "$PROJECT_DIR/target/release/slit_controller" /opt/slit_controller/bin/
 sudo chmod +x /opt/slit_controller/bin/slit_controller
+
+echo "Copying safe restart script..."
+sudo cp "$SCRIPT_DIR/safe_restart.sh" /opt/slit_controller/scripts/
+sudo chmod +x /opt/slit_controller/scripts/safe_restart.sh
 
 # Check if config file already exists
 CONFIG_PATH="/opt/slit_controller/config/default_config.toml"

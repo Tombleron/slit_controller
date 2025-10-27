@@ -1,13 +1,12 @@
-use tokio::sync::oneshot::Sender;
+use std::io;
 
-pub enum GetSensorsAttribute {
-    Position,
-    Temperature,
-}
+use crate::command_executor::sensors::SensorsHandler;
+use utilities::command_executor::Command;
 
-pub enum SensorsCommandType {
-    Get(GetSensorsAttribute),
-    Reconnect,
+#[derive(Clone)]
+pub enum SensorsCommand {
+    Position { axis: u8 },
+    Temperature { axis: u8 },
 }
 
 #[derive(Debug)]
@@ -18,34 +17,18 @@ pub enum CommandResponse {
     Ok,
 }
 
-pub struct SensorsCommand {
-    axis: u8,
-    command_type: SensorsCommandType,
-    response_ch: Sender<std::io::Result<CommandResponse>>,
-}
+impl Command for SensorsCommand {
+    type Response = CommandResponse;
+    type Handler = SensorsHandler;
 
-impl SensorsCommand {
-    pub fn new(
-        axis: u8,
-        command_type: SensorsCommandType,
-        response_ch: Sender<std::io::Result<CommandResponse>>,
-    ) -> Self {
-        Self {
-            axis,
-            command_type,
-            response_ch,
+    fn execute(self, handler: &mut Self::Handler) -> io::Result<Self::Response> {
+        match self {
+            SensorsCommand::Position { axis } => handler
+                .get_position(axis)
+                .map(|position| CommandResponse::Position(position)),
+            SensorsCommand::Temperature { axis } => handler
+                .get_temperature(axis)
+                .map(|temperature| CommandResponse::Temperature(temperature)),
         }
-    }
-
-    pub fn command_type(&self) -> &SensorsCommandType {
-        &self.command_type
-    }
-
-    pub fn response_ch(self) -> Sender<std::io::Result<CommandResponse>> {
-        self.response_ch
-    }
-
-    pub fn axis(&self) -> u8 {
-        self.axis
     }
 }

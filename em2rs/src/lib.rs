@@ -7,8 +7,8 @@ use utilities::modbus::{Modbus, ModbusError};
 
 const MOTION_CONTROL_REG: u16 = 0x6002;
 const MOTION_STATUS_REG: u16 = 0x1003;
-const CONFIG_REG: u16 = 0x1801;
-const SI_BASE_REG: u16 = 0x0145;
+// const CONFIG_REG: u16 = 0x1801;
+// const SI_BASE_REG: u16 = 0x0145;
 const SI_STATUS_REG: u16 = 0x0179;
 
 bitflags!(
@@ -59,13 +59,13 @@ impl AddAssign for LimitSwitch {
     }
 }
 
-#[derive(Debug)]
-pub struct Em2rsState {
+#[derive(Debug, Clone)]
+pub struct StateParams {
     motion_status: MotionStatus,
     switches: LimitSwitch,
 }
 
-impl Em2rsState {
+impl StateParams {
     pub fn motion_status(&self) -> MotionStatus {
         self.motion_status
     }
@@ -88,14 +88,20 @@ impl Em2rsState {
 }
 
 #[derive(Clone)]
-pub struct Em2rs<const LOW_LIMIT: u8, const HIGH_LIMIT: u8> {
+pub struct Em2rs {
     client: Modbus,
+    low_limit: u8,
+    high_limit: u8,
 }
 
-impl<const LOW_LIMIT: u8, const HIGH_LIMIT: u8> Em2rs<LOW_LIMIT, HIGH_LIMIT> {
-    pub fn new(id: u8) -> Self {
+impl Em2rs {
+    pub fn new(id: u8, low_limit: u8, high_limit: u8) -> Self {
         let modbus = Modbus::new(id);
-        Self { client: modbus }
+        Self {
+            client: modbus,
+            low_limit,
+            high_limit,
+        }
     }
 
     pub fn set_velocity(
@@ -194,19 +200,19 @@ impl<const LOW_LIMIT: u8, const HIGH_LIMIT: u8> Em2rs<LOW_LIMIT, HIGH_LIMIT> {
     ) -> Result<LimitSwitch, ModbusError> {
         let mut switch = LimitSwitch::None;
 
-        self.get_si_status(LOW_LIMIT, client)?
+        self.get_si_status(self.low_limit, client)?
             .then(|| switch += LimitSwitch::Low);
-        self.get_si_status(HIGH_LIMIT, client)?
+        self.get_si_status(self.high_limit, client)?
             .then(|| switch += LimitSwitch::High);
 
         Ok(switch)
     }
 
-    pub fn get_state(&self, client: &mut (impl Write + Read)) -> Result<Em2rsState, ModbusError> {
+    pub fn get_state(&self, client: &mut (impl Write + Read)) -> Result<StateParams, ModbusError> {
         let motion_status = self.get_motion_status(client)?;
         let switches = self.get_limit_switch_state(client)?;
 
-        Ok(Em2rsState {
+        Ok(StateParams {
             motion_status,
             switches,
         })

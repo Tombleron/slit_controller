@@ -9,3 +9,11 @@ utilities = { path = "../utilities" }
 icpcon = { path = "../icpcon" }
 lir = { path = "../lir" }
 em2rs = { path = "../em2rs" }
+anyhow = "1.0.100"
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.17"
+
+toml = "0.8.23"
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }

@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
+use utilities::motor_controller::MotorController as _;
+
 use crate::{
-    command_executor::{
-        motor::command_sender::Em2rsCommandSender, sensors::command_sender::SensorsCommandSender,
-    },
     controller::single_axis::{MoveArgs, SingleAxis},
     models::AxisState,
 };
@@ -51,12 +51,13 @@ impl Axes {
 
 pub struct MultiAxis {
     axes: Axes,
-
-    m7015_cs: SensorsCommandSender,
-    em2rs_cs: Em2rsCommandSender,
 }
 
 impl MultiAxis {
+    pub fn new(axes: Axes) -> Self {
+        Self { axes }
+    }
+
     pub fn is_moving(&self, index: usize) -> Option<bool> {
         if let Some(axis) = self.axes.by_index(index) {
             Some(axis.is_moving())
@@ -90,7 +91,7 @@ impl MultiAxis {
 
     pub async fn position(&mut self, index: usize) -> Result<f32, String> {
         if let Some(axis) = self.axes.by_index_mut(index) {
-            axis.position().await.map_err(|e| e.to_string())
+            axis.get_position().await.map_err(|e| e.to_string())
         } else {
             Err("Incorrect axis index".to_string())
         }
@@ -98,7 +99,7 @@ impl MultiAxis {
 
     pub async fn temperature(&mut self, index: usize) -> Result<f32, String> {
         if let Some(axis) = self.axes.by_index_mut(index) {
-            unimplemented!()
+            axis.get_temperature().await.map_err(|e| e.to_string())
         } else {
             Err("Incorrect axis index".to_string())
         }
@@ -106,21 +107,89 @@ impl MultiAxis {
 
     pub async fn state(&mut self, index: usize) -> Result<AxisState, String> {
         if let Some(axis) = self.axes.by_index(index) {
-            let (state, position, temperature) =
-                tokio::join!(axis.state(), axis.position(), axis.temperature());
+            let state = axis.get_axis_state().await;
 
-            let is_moving = self
-                .is_moving(index)
-                .ok_or("Incorrect axis index".to_string());
-
-            Ok(AxisState {
-                position: position.map_err(|e| e.to_string()),
-                state: state.map_err(|e| e.to_string()),
-                temperature: temperature.map_err(|e| e.to_string()),
-                is_moving,
-            })
+            Ok(state)
         } else {
             Err("Incorrect axis index".to_string())
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Serialize)]
+pub struct AxisConfig {
+    pub lir_id: u8,
+    pub lir_step: f32,
+
+    pub em2rs_id: u8,
+    pub em2rs_low_limit: u8,
+    pub em2rs_high_limit: u8,
+    pub steps_per_mm: u32,
+}
+
+#[derive(Deserialize, Debug, Serialize)]
+pub struct MultiAxisConfig {
+    pub sensors_ip: String,
+    pub sensors_port: u16,
+
+    pub em2rs_ip: String,
+    pub em2rs_port: u16,
+
+    pub icpcon_id: u8,
+
+    pub upper_axis: AxisConfig,
+    pub lower_axis: AxisConfig,
+    pub left_axis: AxisConfig,
+    pub right_axis: AxisConfig,
+}
+
+impl Default for MultiAxisConfig {
+    fn default() -> Self {
+        Self {
+            sensors_ip: "127.0.0.1".to_string(),
+            sensors_port: 50051,
+
+            em2rs_ip: "127.0.0.1".to_string(),
+            em2rs_port: 50052,
+
+            icpcon_id: 1,
+
+            upper_axis: AxisConfig {
+                lir_id: 1,
+                lir_step: 0.05,
+
+                em2rs_id: 1,
+                em2rs_low_limit: 0,
+                em2rs_high_limit: 100,
+                steps_per_mm: 100,
+            },
+            lower_axis: AxisConfig {
+                lir_id: 2,
+                lir_step: 0.05,
+
+                em2rs_id: 2,
+                em2rs_low_limit: 0,
+                em2rs_high_limit: 100,
+                steps_per_mm: 100,
+            },
+            left_axis: AxisConfig {
+                lir_id: 3,
+                lir_step: 0.05,
+
+                em2rs_id: 3,
+                em2rs_low_limit: 0,
+                em2rs_high_limit: 100,
+                steps_per_mm: 100,
+            },
+            right_axis: AxisConfig {
+                lir_id: 4,
+                lir_step: 0.05,
+
+                em2rs_id: 4,
+                em2rs_low_limit: 0,
+                em2rs_high_limit: 100,
+                steps_per_mm: 100,
+            },
         }
     }
 }

@@ -1,39 +1,22 @@
-use std::{io, sync::mpsc::Sender};
-
-use em2rs::Em2rsState;
-
-use crate::command_executor::motor::commands::{CommandResponse, MotorCommand, MotorCommandType};
-
-use super::commands::SetMotorAttribute;
+use crate::command_executor::motor::commands::{CommandResponse, MotorCommand};
+use em2rs::StateParams;
+use std::io;
+use utilities::command_executor::CommandSender;
 
 #[derive(Clone)]
 pub struct Em2rsCommandSender {
-    commands_ch: Sender<MotorCommand>,
+    sender: CommandSender<MotorCommand>,
 }
 
 impl Em2rsCommandSender {
-    pub fn new(commands_ch: Sender<MotorCommand>) -> Self {
-        Self { commands_ch }
+    pub fn new(sender: CommandSender<MotorCommand>) -> Self {
+        Self { sender }
     }
 
-    async fn send_command(&self, command_type: MotorCommandType) -> io::Result<CommandResponse> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
-        let command = MotorCommand::new(command_type, tx);
-
-        self.commands_ch
-            .send(command)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Failed to send command"))?;
-
-        rx.await
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Failed to receive response"))?
-    }
-
-    pub async fn get_state(&self) -> io::Result<Em2rsState> {
+    pub async fn get_state(&self, axis: usize) -> io::Result<StateParams> {
         let response = self
-            .send_command(MotorCommandType::Get(
-                super::commands::GetMotorAttribute::State,
-            ))
+            .sender
+            .send_command(MotorCommand::GetState { axis })
             .await?;
 
         match response {
@@ -45,9 +28,10 @@ impl Em2rsCommandSender {
         }
     }
 
-    pub async fn set_velocity(&self, velocity: u16) -> io::Result<()> {
+    pub async fn set_velocity(&self, axis: usize, velocity: u16) -> io::Result<()> {
         let response = self
-            .send_command(MotorCommandType::Set(SetMotorAttribute::Velocity(velocity)))
+            .sender
+            .send_command(MotorCommand::SetVelocity { axis, velocity })
             .await?;
 
         match response {
@@ -59,11 +43,10 @@ impl Em2rsCommandSender {
         }
     }
 
-    pub async fn set_acceleration(&self, acceleration: u16) -> io::Result<()> {
+    pub async fn set_acceleration(&self, axis: usize, acceleration: u16) -> io::Result<()> {
         let response = self
-            .send_command(MotorCommandType::Set(SetMotorAttribute::Acceleration(
-                acceleration,
-            )))
+            .sender
+            .send_command(MotorCommand::SetAcceleration { axis, acceleration })
             .await?;
 
         match response {
@@ -75,11 +58,10 @@ impl Em2rsCommandSender {
         }
     }
 
-    pub async fn set_deceleration(&self, deceleration: u16) -> io::Result<()> {
+    pub async fn set_deceleration(&self, axis: usize, deceleration: u16) -> io::Result<()> {
         let response = self
-            .send_command(MotorCommandType::Set(SetMotorAttribute::Deceleration(
-                deceleration,
-            )))
+            .sender
+            .send_command(MotorCommand::SetDeceleration { axis, deceleration })
             .await?;
 
         match response {
@@ -91,8 +73,11 @@ impl Em2rsCommandSender {
         }
     }
 
-    pub async fn stop(&self) -> io::Result<()> {
-        let response = self.send_command(MotorCommandType::Stop).await?;
+    pub async fn stop(&self, axis: usize) -> io::Result<()> {
+        let response = self
+            .sender
+            .send_command(MotorCommand::Stop { axis })
+            .await?;
 
         match response {
             CommandResponse::Ok => Ok(()),
@@ -103,20 +88,11 @@ impl Em2rsCommandSender {
         }
     }
 
-    pub async fn send_steps(&self, steps: i32) -> io::Result<()> {
-        let response = self.send_command(MotorCommandType::Move { steps }).await?;
-
-        match response {
-            CommandResponse::Ok => Ok(()),
-            _ => Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Unexpected response type",
-            )),
-        }
-    }
-
-    pub async fn reconnect(&self) -> io::Result<()> {
-        let response = self.send_command(MotorCommandType::Reconnect).await?;
+    pub async fn send_steps(&self, axis: usize, steps: i32) -> io::Result<()> {
+        let response = self
+            .sender
+            .send_command(MotorCommand::Move { axis, steps })
+            .await?;
 
         match response {
             CommandResponse::Ok => Ok(()),

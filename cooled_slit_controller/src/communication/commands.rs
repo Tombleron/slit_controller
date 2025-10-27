@@ -3,8 +3,8 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 
 use crate::{
-    communication::{AxisProperty, Command, CommandEnvelope, CommandResult},
     controller::single_axis::MoveArgs,
+    models::{AxisProperty, Command, CommandEnvelope, CommandResult},
 };
 
 pub fn parse_command(cmd_str: &str) -> Option<(CommandEnvelope, oneshot::Receiver<CommandResult>)> {
@@ -77,7 +77,7 @@ pub fn parse_command(cmd_str: &str) -> Option<(CommandEnvelope, oneshot::Receive
     Some((
         CommandEnvelope {
             command,
-            sender: tx,
+            response: tx,
         },
         rx,
     ))
