@@ -30,9 +30,9 @@ pub struct MoveArgs {
 impl Default for MoveArgs {
     fn default() -> Self {
         Self {
-            acceleration: 1000,
-            deceleration: 1000,
-            velocity: 1000,
+            acceleration: 100,
+            deceleration: 100,
+            velocity: 100,
             position_window: 0.001,
             time_limit: Duration::from_secs(60),
         }
@@ -68,18 +68,22 @@ impl SingleAxis {
         }
     }
 
-    pub async fn get_temperature(&self) -> Result<f32, String> {
-        self.sensors_cs
-            .get_temperature(self.axis as u8)
-            .await
-            .map_err(|e| format!("Failed to get temperature: {}", e))
-    }
+    // pub async fn get_temperature(&self) -> Result<f32, String> {
+    //     self.sensors_cs
+    //         .get_temperature(self.axis as u8)
+    //         .await
+    //         .map_err(|e| format!("Failed to get temperature: {}", e))
+    // }
 
     pub async fn get_axis_state(&self) -> AxisState {
-        let (state, position, temperature) = tokio::join!(
+        let (
+            state,
+            position,
+            // temperature
+        ) = tokio::join!(
             self.get_state(),
             self.get_position(),
-            self.get_temperature()
+            // self.get_temperature()
         );
 
         let is_moving = Ok(self.moving.load(Ordering::Relaxed));
@@ -87,7 +91,7 @@ impl SingleAxis {
         AxisState {
             state,
             position,
-            temperature,
+            // temperature,
             is_moving,
         }
     }
@@ -131,6 +135,7 @@ impl MotorController for SingleAxis {
             .set_velocity(self.axis, parameters.velocity as u16)
             .await
             .map_err(|e| format!("Failed to set velocity: {}", e))?;
+        dbg!(parameters);
         Ok(())
     }
 

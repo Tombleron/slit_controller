@@ -188,7 +188,8 @@ impl Em2rs {
         let ret = self
             .client
             .read_holding_register(client, SI_STATUS_REG)?
-            .to_be_bytes()[0];
+            .to_be_bytes()[1];
+        // dbg!(ret);
         let status = (ret & 1u8.shl(index)) > 0;
 
         Ok(status)

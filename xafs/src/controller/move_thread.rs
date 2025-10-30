@@ -72,6 +72,7 @@ impl MoveThread {
 impl Drop for MoveThread {
     fn drop(&mut self) {
         self.moving.store(false, Ordering::SeqCst);
+        dbg!("Move thread dropped");
     }
 }
 
@@ -92,10 +93,11 @@ impl Motor for MoveThread {
     }
 
     async fn move_relative(&mut self, error: f32) -> Result<(), String> {
+        let error = -error;
         let steps = if error.abs() == 0.0 {
             0
         } else if error.abs() < 0.001 {
-            if error > 0.0 { 100 } else { -100 }
+            if error > 0.0 { 10 } else { -10 }
         } else {
             (error * self.steps_per_mm as f32) as i32
         };
@@ -107,6 +109,11 @@ impl Motor for MoveThread {
 
         while self.is_moving() && self.state().await?.is_moving() && !self.is_time_limit_exceeded()
         {
+            dbg!(
+                self.is_moving(),
+                self.state().await?.is_moving(),
+                self.is_time_limit_exceeded()
+            );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
