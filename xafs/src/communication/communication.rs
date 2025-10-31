@@ -51,10 +51,10 @@ async fn handle_get_command(envelop: CommandEnvelope, shared_state: Arc<Mutex<Sh
                 .clone()
                 .map(|state| CommandResponse::State(state_params_to_state(&state))),
             AxisProperty::Moving => axis_state.is_moving.clone().map(CommandResponse::Moving),
-            // AxisProperty::Temperature => axis_state
-            //     .temperature
-            //     .clone()
-            //     .map(CommandResponse::Temperature),
+            AxisProperty::Temperature => axis_state
+                .temperature
+                .clone()
+                .map(CommandResponse::Temperature),
         };
 
         respose.map_err(|e| CommandError {

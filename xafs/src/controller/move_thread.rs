@@ -101,6 +101,7 @@ impl Motor for MoveThread {
         } else {
             (error * self.steps_per_mm as f32) as i32
         };
+        dbg!(steps);
 
         let _result = self
             .send_steps(steps)
@@ -109,11 +110,6 @@ impl Motor for MoveThread {
 
         while self.is_moving() && self.state().await?.is_moving() && !self.is_time_limit_exceeded()
         {
-            dbg!(
-                self.is_moving(),
-                self.state().await?.is_moving(),
-                self.is_time_limit_exceeded()
-            );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
 

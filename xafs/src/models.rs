@@ -10,7 +10,7 @@ type AxisStateValue<T> = Result<T, String>;
 #[derive(Debug)]
 pub struct AxisState {
     pub position: AxisStateValue<f32>,
-    // pub temperature: AxisStateValue<f32>,
+    pub temperature: AxisStateValue<f32>,
     pub state: AxisStateValue<StateParams>,
     pub is_moving: AxisStateValue<bool>,
 }
@@ -20,7 +20,7 @@ pub enum AxisProperty {
     Position,
     State,
     Moving,
-    // Temperature,
+    Temperature,
 }
 
 pub struct SharedState {

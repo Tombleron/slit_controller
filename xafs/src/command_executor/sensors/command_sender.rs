@@ -27,18 +27,18 @@ impl SensorsCommandSender {
         }
     }
 
-    // pub async fn get_temperature(&self, axis: u8) -> io::Result<f32> {
-    //     let response = self
-    //         .sender
-    //         .send_command(SensorsCommand::Temperature { axis })
-    //         .await?;
+    pub async fn get_temperature(&self, axis: u8) -> io::Result<f32> {
+        let response = self
+            .sender
+            .send_command(SensorsCommand::Temperature { axis })
+            .await?;
 
-    //     match response {
-    //         CommandResponse::Temperature(temperature) => Ok(temperature),
-    //         _ => Err(io::Error::new(
-    //             io::ErrorKind::Other,
-    //             "Unexpected response type",
-    //         )),
-    //     }
-    // }
+        match response {
+            CommandResponse::Temperature(temperature) => Ok(temperature),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Unexpected response type",
+            )),
+        }
+    }
 }

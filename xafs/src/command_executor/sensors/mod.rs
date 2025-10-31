@@ -9,19 +9,15 @@ pub mod commands;
 pub struct SensorsHandler {
     tcp_stream: LazyTcpStream,
     encoders: Vec<LIR>,
-    // temperature: Vec<Trid>,
+    temperature: Vec<Trid>,
 }
 
 impl SensorsHandler {
-    pub fn new(
-        tcp_stream: LazyTcpStream,
-        encoders: Vec<LIR>,
-        // temperature: Vec<Trid>
-    ) -> Self {
+    pub fn new(tcp_stream: LazyTcpStream, encoders: Vec<LIR>, temperature: Vec<Trid>) -> Self {
         Self {
             tcp_stream,
             encoders,
-            // temperature,
+            temperature,
         }
     }
 
@@ -36,16 +32,16 @@ impl SensorsHandler {
             })
     }
 
-    // fn get_temperature(&mut self, axis: u8) -> io::Result<f32> {
-    //     let trid = self.temperature.get(axis as usize).ok_or_else(|| {
-    //         std::io::Error::new(
-    //             std::io::ErrorKind::InvalidInput,
-    //             format!("Invalid Trid ID: {}", axis),
-    //         )
-    //     })?;
+    fn get_temperature(&mut self, axis: u8) -> io::Result<f32> {
+        let trid = self.temperature.get(axis as usize).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Invalid Trid ID: {}", axis),
+            )
+        })?;
 
-    //     trid.read_data(&mut self.tcp_stream)
-    // }
+        trid.read_data(&mut self.tcp_stream)
+    }
 }
 
 impl DeviceHandler for SensorsHandler {

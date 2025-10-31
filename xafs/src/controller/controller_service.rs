@@ -2,6 +2,7 @@ use anyhow::Result;
 use em2rs::Em2rs;
 use lir::LIR;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
+use trid::Trid;
 use utilities::{command_executor::CommandExecutor, lazy_tcp::LazyTcpStream};
 
 use tokio::sync::{Mutex, mpsc};
@@ -85,8 +86,14 @@ pub fn create_controller(
             LIR::new(config.right_axis.lir_id, config.right_axis.lir_step),
             LIR::new(config.left_axis.lir_id, config.left_axis.lir_step),
         ],
-        // M7015::new(config.icpcon_id),
+        vec![
+            Trid::new(2, 0),
+            Trid::new(2, 1),
+            Trid::new(2, 2),
+            Trid::new(2, 3),
+        ],
     );
+    // M7015::new(config.icpcon_id),
 
     let sensors_command_executor = CommandExecutor::new(sensors_handler);
     let sensors_command_sender = SensorsCommandSender::new(sensors_command_executor.sender());

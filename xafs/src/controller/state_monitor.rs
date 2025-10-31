@@ -25,7 +25,7 @@ pub async fn run_state_monitor(
                 Ok(state) => state,
                 Err(e) => AxisState {
                     position: Err(e.to_string()),
-                    // temperature: Err(e.to_string()),
+                    temperature: Err(e.to_string()),
                     state: Err(e.to_string()),
                     is_moving: Err(e.to_string()),
                 },

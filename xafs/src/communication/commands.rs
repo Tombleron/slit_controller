@@ -65,7 +65,7 @@ pub fn parse_command(cmd_str: &str) -> Option<(CommandEnvelope, oneshot::Receive
                 "position" => AxisProperty::Position,
                 "state" => AxisProperty::State,
                 "is_moving" => AxisProperty::Moving,
-                // "temperature" => AxisProperty::Temperature,
+                "temperature" => AxisProperty::Temperature,
                 _ => return None,
             };
 

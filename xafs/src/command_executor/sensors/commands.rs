@@ -6,7 +6,7 @@ use utilities::command_executor::Command;
 #[derive(Clone)]
 pub enum SensorsCommand {
     Position { axis: u8 },
-    // Temperature { axis: u8 },
+    Temperature { axis: u8 },
 }
 
 #[derive(Debug)]
@@ -26,9 +26,9 @@ impl Command for SensorsCommand {
             SensorsCommand::Position { axis } => handler
                 .get_position(axis)
                 .map(|position| CommandResponse::Position(position)),
-            // SensorsCommand::Temperature { axis } => handler
-            //     .get_temperature(axis)
-            //     .map(|temperature| CommandResponse::Temperature(temperature)),
+            SensorsCommand::Temperature { axis } => handler
+                .get_temperature(axis)
+                .map(|temperature| CommandResponse::Temperature(temperature)),
         }
     }
 }
