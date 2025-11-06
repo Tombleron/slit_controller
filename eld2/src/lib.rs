@@ -1,4 +1,3 @@
-use bitflags::bitflags;
 use std::{
     io::{Read, Write},
     ops::{Add, AddAssign, Shl},
@@ -6,24 +5,7 @@ use std::{
 use utilities::modbus::{Modbus, ModbusError};
 
 const MOTION_CONTROL_REG: u16 = 0x6002;
-const MOTION_STATUS_REG: u16 = 0x1003;
-// const CONFIG_REG: u16 = 0x1801;
-// const SI_BASE_REG: u16 = 0x0145;
 const SI_STATUS_REG: u16 = 0x0179;
-
-bitflags!(
-    #[derive(Debug, Clone, Copy)]
-    pub struct MotionStatus: u8 {
-        const FAULT = 0b00000001;
-        const ENABLED = 0b00000010;
-        const RUNNING = 0b00000100;
-        const COMMAND_COMPLETE = 0b00001000;
-        const PATH_COMPLETE = 0b00010000;
-        const HOMING_COMPLETE = 0b00100000;
-        const LIMIT_ACTIVE = 0b01000000;
-        const EMERGENCY_STOP = 0b10000000;
-    }
-);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LimitSwitch {
@@ -59,6 +41,9 @@ impl AddAssign for LimitSwitch {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct MotionStatus(u16);
+
 #[derive(Debug, Clone)]
 pub struct StateParams {
     motion_status: MotionStatus,
@@ -75,7 +60,7 @@ impl StateParams {
     }
 
     pub fn is_moving(&self) -> bool {
-        self.motion_status.contains(MotionStatus::RUNNING)
+        self.motion_status.0 != 0
     }
 
     pub fn high_limit_triggered(&self) -> bool {
@@ -160,14 +145,9 @@ impl Em2rs {
             .write_single_register(client, MOTION_CONTROL_REG, 0x10)
     }
 
-    pub fn get_motion_status(
-        &self,
-        client: &mut (impl Write + Read),
-    ) -> Result<MotionStatus, ModbusError> {
-        let status_word = self
-            .client
-            .read_holding_register(client, MOTION_STATUS_REG)?;
-        Ok(MotionStatus::from_bits_truncate(status_word as u8))
+    pub fn get_speed(&self, client: &mut (impl Write + Read)) -> Result<u16, ModbusError> {
+        let speed = self.client.read_holding_register(client, 0x0B09)?;
+        Ok(speed)
     }
 
     pub fn stop(&self, client: &mut (impl Write + Read)) -> Result<(), ModbusError> {
@@ -191,7 +171,7 @@ impl Em2rs {
             .client
             .read_holding_register(client, SI_STATUS_REG)?
             .to_be_bytes()[1];
-        // dbg!(ret);
+
         let status = (ret & 1u8.shl(index)) > 0;
 
         Ok(status)
@@ -212,11 +192,11 @@ impl Em2rs {
     }
 
     pub fn get_state(&self, client: &mut (impl Write + Read)) -> Result<StateParams, ModbusError> {
-        let motion_status = self.get_motion_status(client)?;
+        let speed = self.get_speed(client)?;
         let switches = self.get_limit_switch_state(client)?;
 
         Ok(StateParams {
-            motion_status,
+            motion_status: MotionStatus(speed),
             switches,
         })
     }

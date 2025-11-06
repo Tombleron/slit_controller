@@ -1,7 +1,7 @@
-use std::fmt;
+use std::{fmt, sync::Arc};
 
 use em2rs::StateParams;
-use tokio::sync::oneshot;
+use tokio::sync::{Mutex, oneshot};
 
 use crate::controller::single_axis::MoveArgs;
 
@@ -23,8 +23,58 @@ pub enum AxisProperty {
     Temperature,
 }
 
+pub struct CSlitState {
+    upper: Arc<Mutex<AxisState>>,
+    lower: Arc<Mutex<AxisState>>,
+    left: Arc<Mutex<AxisState>>,
+    right: Arc<Mutex<AxisState>>,
+}
+
+impl CSlitState {
+    pub fn get_axis_state(&self, axis: usize) -> Option<Arc<Mutex<AxisState>>> {
+        match axis {
+            0 => Some(self.upper.clone()),
+            1 => Some(self.lower.clone()),
+            2 => Some(self.right.clone()),
+            3 => Some(self.left.clone()),
+            _ => None,
+        }
+    }
+}
+
+impl Default for CSlitState {
+    fn default() -> Self {
+        Self {
+            upper: Arc::new(Mutex::new(AxisState {
+                position: Err("Not initialized".to_string()),
+                temperature: Err("Not initialized".to_string()),
+                state: Err("Not initialized".to_string()),
+                is_moving: Err("Not initialized".to_string()),
+            })),
+            lower: Arc::new(Mutex::new(AxisState {
+                position: Err("Not initialized".to_string()),
+                temperature: Err("Not initialized".to_string()),
+                state: Err("Not initialized".to_string()),
+                is_moving: Err("Not initialized".to_string()),
+            })),
+            left: Arc::new(Mutex::new(AxisState {
+                position: Err("Not initialized".to_string()),
+                temperature: Err("Not initialized".to_string()),
+                state: Err("Not initialized".to_string()),
+                is_moving: Err("Not initialized".to_string()),
+            })),
+            right: Arc::new(Mutex::new(AxisState {
+                position: Err("Not initialized".to_string()),
+                temperature: Err("Not initialized".to_string()),
+                state: Err("Not initialized".to_string()),
+                is_moving: Err("Not initialized".to_string()),
+            })),
+        }
+    }
+}
+
 pub struct SharedState {
-    pub axes: [Option<AxisState>; 4],
+    pub cslit: CSlitState,
 }
 
 #[derive(Debug)]

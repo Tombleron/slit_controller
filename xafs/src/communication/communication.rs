@@ -43,8 +43,10 @@ async fn handle_get_command(envelop: CommandEnvelope, shared_state: Arc<Mutex<Sh
     };
 
     let shared_state = shared_state.lock().await;
-    let response = if let Some(axis_state) = &shared_state.axes[axis] {
-        let respose = match property {
+    let response = if let Some(axis_state) = &shared_state.cslit.get_axis_state(axis) {
+        let axis_state = axis_state.lock().await;
+
+        let response = match property {
             AxisProperty::Position => axis_state.position.clone().map(CommandResponse::Position),
             AxisProperty::State => axis_state
                 .state
@@ -57,7 +59,7 @@ async fn handle_get_command(envelop: CommandEnvelope, shared_state: Arc<Mutex<Sh
                 .map(CommandResponse::Temperature),
         };
 
-        respose.map_err(|e| CommandError {
+        response.map_err(|e| CommandError {
             message: e.to_string(),
         })
     } else {

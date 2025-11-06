@@ -7,7 +7,7 @@ use crate::{
         controller_service::{create_controller, run_controller},
         state_monitor::run_state_monitor,
     },
-    models::SharedState,
+    models::{CSlitState, SharedState},
 };
 use std::{path::PathBuf, sync::Arc};
 mod command_executor;
@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
     let (command_tx, command_rx) = mpsc::channel(100);
 
     let state = Arc::new(Mutex::new(SharedState {
-        axes: [None, None, None, None],
+        cslit: CSlitState::default(),
     }));
 
     let (mut sensors_command_executor, mut em2rs_command_executor, multi_axis_controller) =

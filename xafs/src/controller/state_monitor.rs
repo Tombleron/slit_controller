@@ -31,8 +31,11 @@ pub async fn run_state_monitor(
                 },
             };
 
-            let mut shared_state = shared_state.lock().await;
-            shared_state.axes[axis] = Some(axis_state);
+            let shared_state = shared_state.lock().await;
+            if let Some(shared_state) = shared_state.cslit.get_axis_state(axis) {
+                let mut shared_state = shared_state.lock().await;
+                *shared_state = axis_state;
+            }
         }
     }
 }

@@ -48,7 +48,7 @@ impl MoveThread {
             sensors_cs: m7015_cs,
             em2rs_cs,
 
-            filter: MovingAverage::new(20),
+            filter: MovingAverage::new(5),
 
             target_position,
             position_window,
@@ -97,11 +97,10 @@ impl Motor for MoveThread {
         let steps = if error.abs() == 0.0 {
             0
         } else if error.abs() < 0.001 {
-            if error > 0.0 { 10 } else { -10 }
+            if error > 0.0 { 1 } else { -1 }
         } else {
             (error * self.steps_per_mm as f32) as i32
         };
-        dbg!(steps);
 
         let _result = self
             .send_steps(steps)
