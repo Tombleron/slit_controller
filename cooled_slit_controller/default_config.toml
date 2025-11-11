@@ -1,37 +1,37 @@
-sensors_ip = "127.0.0.1"
-sensors_port = 50051
-em2rs_ip = "127.0.0.1"
-em2rs_port = 50052
+sensors_ip = "192.168.0.61"
+sensors_port = 60003
+em2rs_ip = "192.168.0.61"
+em2rs_port = 60002
 icpcon_id = 1
 
 [upper_axis]
-lir_id = 1
-lir_step = 0.05
-em2rs_id = 1
-em2rs_low_limit = 0
-em2rs_high_limit = 100
-steps_per_mm = 100
+lir_id = 11
+lir_step = 0.0005
+em2rs_id = 21
+em2rs_low_limit = 2
+em2rs_high_limit = 3
+steps_per_mm = 500000
 
 [lower_axis]
-lir_id = 2
-lir_step = 0.05
-em2rs_id = 2
-em2rs_low_limit = 0
-em2rs_high_limit = 100
-steps_per_mm = 100
+lir_id = 12
+lir_step = 0.0005
+em2rs_id = 22
+em2rs_low_limit = 2
+em2rs_high_limit = 3
+steps_per_mm = 500000
 
 [left_axis]
-lir_id = 3
-lir_step = 0.05
-em2rs_id = 3
-em2rs_low_limit = 0
-em2rs_high_limit = 100
-steps_per_mm = 100
+lir_id = 13
+lir_step = 0.0005
+em2rs_id = 23
+em2rs_low_limit = 3
+em2rs_high_limit = 2
+steps_per_mm = 10000
 
 [right_axis]
-lir_id = 4
-lir_step = 0.05
-em2rs_id = 4
-em2rs_low_limit = 0
-em2rs_high_limit = 100
-steps_per_mm = 100
+lir_id = 14
+lir_step = 0.0005
+em2rs_id = 24
+em2rs_low_limit = 3
+em2rs_high_limit = 2
+steps_per_mm = 10000

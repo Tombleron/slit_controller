@@ -14,6 +14,7 @@ mod command_executor;
 pub mod communication;
 pub mod config;
 mod controller;
+pub mod controllers;
 pub mod logging;
 pub mod models;
 

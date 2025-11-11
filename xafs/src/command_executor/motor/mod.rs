@@ -7,7 +7,7 @@ pub mod commands;
 
 pub struct Em2rsHandler {
     tcp_stream: LazyTcpStream,
-    em2rs: [Em2rs; 4],
+    em2rs: [Em2rs; 5],
 }
 
 impl DeviceHandler for Em2rsHandler {
@@ -15,7 +15,7 @@ impl DeviceHandler for Em2rsHandler {
 }
 
 impl Em2rsHandler {
-    pub fn new(tcp_stream: LazyTcpStream, em2rs: [Em2rs; 4]) -> Self {
+    pub fn new(tcp_stream: LazyTcpStream, em2rs: [Em2rs; 5]) -> Self {
         Self { tcp_stream, em2rs }
     }
 
