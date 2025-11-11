@@ -28,7 +28,7 @@ pub struct FilterMotor {
 
     is_moving: Arc<AtomicBool>,
     start_time: Instant,
-    steps_per_mm: u32,
+    steps_per_mm: i32,
 }
 
 impl Drop for FilterMotor {
@@ -45,7 +45,7 @@ impl FilterMotor {
         position_window: f32,
         time_limit: Duration,
         moving: Arc<AtomicBool>,
-        steps_per_mm: u32,
+        steps_per_mm: i32,
     ) -> Self {
         Self {
             encoder_cs,

@@ -28,7 +28,7 @@ pub struct FilterAxis {
     move_thread: Arc<Mutex<Option<JoinHandle<Result<(), String>>>>>,
     is_moving: Arc<AtomicBool>,
 
-    steps_per_mm: u32,
+    steps_per_mm: i32,
 }
 
 impl FilterAxis {
@@ -36,7 +36,7 @@ impl FilterAxis {
         name: String,
         encoder_cs: EncoderCommandSender,
         motor_cs: Em2rsCommandSender,
-        steps_per_mm: u32,
+        steps_per_mm: i32,
     ) -> Self {
         Self {
             name,
