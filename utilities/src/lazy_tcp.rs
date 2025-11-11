@@ -104,7 +104,8 @@ impl Read for LazyTcpStream {
             Ok(n) => Ok(n),
             Err(e)
                 if e.kind() == std::io::ErrorKind::ConnectionReset
-                    || e.kind() == std::io::ErrorKind::ConnectionAborted =>
+                    || e.kind() == std::io::ErrorKind::ConnectionAborted
+                    || e.kind() == std::io::ErrorKind::BrokenPipe =>
             {
                 let _ = self.stream.as_mut().unwrap().shutdown(Shutdown::Both);
                 self.stream = None;
@@ -125,7 +126,8 @@ impl Write for LazyTcpStream {
             Ok(n) => Ok(n),
             Err(e)
                 if e.kind() == std::io::ErrorKind::ConnectionReset
-                    || e.kind() == std::io::ErrorKind::ConnectionAborted =>
+                    || e.kind() == std::io::ErrorKind::ConnectionAborted
+                    || e.kind() == std::io::ErrorKind::BrokenPipe =>
             {
                 let _ = self.stream.as_mut().unwrap().shutdown(Shutdown::Both);
                 self.stream = None;
