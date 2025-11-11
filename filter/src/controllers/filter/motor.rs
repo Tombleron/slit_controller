@@ -51,7 +51,7 @@ impl FilterMotor {
             encoder_cs,
             em2rs_cs,
 
-            filter: MovingAverage::new(20),
+            filter: MovingAverage::new(5),
 
             target_position,
             position_window,
@@ -85,13 +85,7 @@ impl Motor for FilterMotor {
     }
 
     async fn move_relative(&mut self, error: f32) -> Result<(), String> {
-        let steps = if error.abs() == 0.0 {
-            0
-        } else if error.abs() < 0.001 {
-            if error > 0.0 { 100 } else { -100 }
-        } else {
-            (error * self.steps_per_mm as f32) as i32
-        };
+        let steps = (error * self.steps_per_mm as f32) as i32;
 
         let _result = self
             .send_steps(steps)
