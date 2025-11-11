@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use utilities::motor_controller::MotorController as _;
+use utilities::motor_controller::MotorHolder as _;
 
 use crate::{
     controller::single_axis::{MoveArgs, SingleAxis},

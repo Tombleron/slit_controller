@@ -8,7 +8,7 @@ use std::{
 
 use em2rs::StateParams;
 use tokio::task::JoinHandle;
-use utilities::motor_controller::{Motor as _, MotorController};
+use utilities::motor_controller::{Motor as _, MotorHolder};
 
 use crate::{
     command_executor::{
@@ -93,7 +93,7 @@ impl SingleAxis {
     }
 }
 
-impl MotorController for SingleAxis {
+impl MotorHolder for SingleAxis {
     type MovementParameters = MoveArgs;
     type MotorState = StateParams;
 

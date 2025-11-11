@@ -1,5 +1,5 @@
 [package]
-name = "cooled_slit_controller"
+name = "filter"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,15 +9,12 @@ toml = "0.8.23"
 anyhow = "1.0.100"
 serde = { version = "1.0.228", features = ["derive"] }
 async-trait = "0.1.89"
-
 thiserror = "2.0.17"
-tracing = "0.1.41"
-tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
+tracing = "0.1.41"
 
-utilities = { path = "../utilities" }
-icpcon = { path = "../icpcon" }
-lir = { path = "../lir" }
 em2rs = { path = "../em2rs" }
+utilities = { path = "../utilities" }
+lir = { path = "../lir" }
 
 motarem = { git = "https://github.com/Tombleron/motarem.git" }

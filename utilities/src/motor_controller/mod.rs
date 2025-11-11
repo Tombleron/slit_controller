@@ -8,28 +8,26 @@ pub trait MotorState {
     fn is_moving(&self) -> bool;
 }
 
-pub trait MotorController {
+// This name is astrocious
+pub trait MotorHolder {
     type MovementParameters;
     type MotorState;
 
-    async fn stop(&mut self) -> Result<(), String>;
-    async fn update_parameters(
-        &mut self,
-        parameters: &Self::MovementParameters,
-    ) -> Result<(), String>;
+    async fn stop(&self) -> Result<(), String>;
+    async fn update_parameters(&self, parameters: &Self::MovementParameters) -> Result<(), String>;
     async fn get_state(&self) -> Result<Self::MotorState, String>;
     async fn get_position(&self) -> Result<f32, String>;
-
-    fn is_moving(&self) -> bool;
-    fn set_moving(&mut self, is_moving: bool);
-    fn init_motion(
-        &mut self,
+    async fn init_motion(
+        &self,
         target: f32,
         parameters: &Self::MovementParameters,
     ) -> Result<(), String>;
 
+    fn is_moving(&self) -> bool;
+    fn set_moving(&self, is_moving: bool);
+
     async fn move_to(
-        &mut self,
+        &self,
         target: f32,
         parameters: Self::MovementParameters,
     ) -> Result<(), String> {
@@ -41,7 +39,7 @@ pub trait MotorController {
 
         self.set_moving(true);
 
-        self.init_motion(target, &parameters)?;
+        self.init_motion(target, &parameters).await?;
 
         Ok(())
     }

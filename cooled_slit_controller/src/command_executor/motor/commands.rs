@@ -15,7 +15,6 @@ pub enum MotorCommand {
 }
 
 pub enum CommandResponse {
-    None,
     State(StateParams),
     Ok,
 }

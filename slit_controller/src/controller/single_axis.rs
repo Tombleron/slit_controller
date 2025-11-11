@@ -18,7 +18,7 @@ use crate::{
 use standa::command::state::StateParams;
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
-use utilities::motor_controller::{Motor as _, MotorController};
+use utilities::motor_controller::{Motor as _, MotorHolder};
 
 #[derive(Debug, Clone, Copy)]
 pub struct MovementParams {
@@ -114,7 +114,7 @@ impl Drop for SingleAxis {
     }
 }
 
-impl MotorController for SingleAxis {
+impl MotorHolder for SingleAxis {
     type MovementParameters = MovementParams;
     type MotorState = StateParams;
 

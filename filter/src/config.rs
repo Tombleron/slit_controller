@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::controllers::cooled_slit::config::CooledSlitControllerConfig;
+use crate::controllers::filter::config::FilterControllerConfig;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -73,12 +73,12 @@ impl ConfigManager {
         Self { options }
     }
 
-    pub fn load(&self) -> anyhow::Result<CooledSlitControllerConfig> {
+    pub fn load(&self) -> anyhow::Result<FilterControllerConfig> {
         let config_path = self.options.config_path.clone();
 
         if !config_path.exists() {
             if self.options.create_if_missing {
-                let default_config = CooledSlitControllerConfig::default();
+                let default_config = FilterControllerConfig::default();
                 self.save(&default_config)
                     .context("Failed to save default config")?;
                 return Ok(default_config);
@@ -93,13 +93,13 @@ impl ConfigManager {
         let content =
             fs::read_to_string(config_path).map_err(|e| ConfigError::ReadError { source: e })?;
 
-        let config: CooledSlitControllerConfig =
+        let config: FilterControllerConfig =
             toml::from_str(&content).map_err(|e| ConfigError::ParseError { source: e })?;
 
         Ok(config)
     }
 
-    pub fn save(&self, config: &CooledSlitControllerConfig) -> anyhow::Result<()> {
+    pub fn save(&self, config: &FilterControllerConfig) -> anyhow::Result<()> {
         let config_path = &self.options.config_path;
 
         // Create parent directory if it doesn't exist
@@ -117,7 +117,7 @@ impl ConfigManager {
     }
 }
 
-pub fn init_config() -> anyhow::Result<(ConfigManager, CooledSlitControllerConfig)> {
+pub fn init_config() -> anyhow::Result<(ConfigManager, FilterControllerConfig)> {
     let manager = ConfigManager::new();
     let config = manager.load()?;
     Ok((manager, config))
@@ -125,7 +125,7 @@ pub fn init_config() -> anyhow::Result<(ConfigManager, CooledSlitControllerConfi
 
 pub fn init_config_with_options(
     options: ConfigOptions,
-) -> anyhow::Result<(ConfigManager, CooledSlitControllerConfig)> {
+) -> anyhow::Result<(ConfigManager, FilterControllerConfig)> {
     let manager = ConfigManager::with_options(options);
     let config = manager.load()?;
     Ok((manager, config))
@@ -142,13 +142,13 @@ pub fn create_default_config<P: AsRef<Path>>(path: Option<P>) -> anyhow::Result<
     };
 
     let manager = ConfigManager::with_options(options);
-    let default_config = CooledSlitControllerConfig::default();
+    let default_config = FilterControllerConfig::default();
     manager.save(&default_config)?;
 
     Ok(())
 }
 
-pub fn load_config() -> anyhow::Result<CooledSlitControllerConfig> {
+pub fn load_config() -> anyhow::Result<FilterControllerConfig> {
     let (_manager, config) = init_config()?;
     Ok(config)
 }

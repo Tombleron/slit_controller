@@ -11,10 +11,8 @@ pub enum SensorsCommand {
 
 #[derive(Debug)]
 pub enum CommandResponse {
-    None,
     Temperature(f32),
     Position(f32),
-    Ok,
 }
 
 impl Command for SensorsCommand {

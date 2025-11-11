@@ -1,75 +1,36 @@
-use anyhow::Result;
+pub mod axis;
+pub mod config;
+pub mod controller;
+pub mod motor;
+pub mod params;
+
+use std::{net::SocketAddr, sync::Arc, time::Duration};
+
+use config::CooledSlitControllerConfig;
 use em2rs::Em2rs;
 use icpcon::M7015;
 use lir::LIR;
-use std::{net::SocketAddr, sync::Arc, time::Duration};
 use utilities::{command_executor::CommandExecutor, lazy_tcp::LazyTcpStream};
-
-use tokio::sync::{Mutex, mpsc};
 
 use crate::{
     command_executor::{
         motor::{Em2rsHandler, command_sender::Em2rsCommandSender},
         sensors::{SensorsHandler, command_sender::SensorsCommandSender},
     },
-    controller::{
-        multi_axis::{Axes, MultiAxis, MultiAxisConfig},
-        single_axis::SingleAxis,
-    },
-    models::{Command, CommandEnvelope, CommandError, CommandResponse},
+    controllers::cooled_slit::{axis::CooledSlitAxis, controller::CooledSlitController},
 };
-
-pub async fn run_controller(
-    mut command_rx: mpsc::Receiver<CommandEnvelope>,
-    multi_axis_controller: Arc<Mutex<MultiAxis>>,
-) -> Result<()> {
-    while let Some(envelope) = command_rx.recv().await {
-        let CommandEnvelope { command, response } = envelope;
-        let mut multi_axis = multi_axis_controller.lock().await;
-
-        let result = match command {
-            Command::Move {
-                axis,
-                position,
-                params,
-            } => multi_axis
-                .move_to_position(axis, position, params.unwrap_or_default())
-                .await
-                .map(|_| CommandResponse::Success)
-                .map_err(|e| e.to_string().into()),
-            Command::Stop { axis } => multi_axis
-                .stop(axis)
-                .await
-                .map(|_| CommandResponse::Success)
-                .map_err(|e| e.to_string().into()),
-            Command::Get {
-                axis: _,
-                property: _,
-            } => Err(CommandError {
-                message: "GET commands should not be handled by the controller".to_string(),
-            }),
-        };
-
-        let _ = response.send(result);
-    }
-
-    Ok(())
-}
 
 const READ_TIMEOUT: Duration = Duration::from_millis(100);
 const WRITE_TIMEOUT: Duration = Duration::from_millis(100);
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
 const MAX_RETRIES: u32 = 3;
 
-pub fn create_controller(
-    config: MultiAxisConfig,
-) -> (
-    CommandExecutor<SensorsHandler>,
-    CommandExecutor<Em2rsHandler>,
-    MultiAxis,
-) {
+pub fn create_sensors(
+    config: &CooledSlitControllerConfig,
+) -> (CommandExecutor<SensorsHandler>, SensorsCommandSender) {
     let sensors_scoket_addr =
         SocketAddr::new(config.sensors_ip.parse().unwrap(), config.sensors_port);
+
     let sensors_tcp_stream = LazyTcpStream::new(
         sensors_scoket_addr,
         MAX_RETRIES,
@@ -92,6 +53,12 @@ pub fn create_controller(
     let sensors_command_executor = CommandExecutor::new(sensors_handler);
     let sensors_command_sender = SensorsCommandSender::new(sensors_command_executor.sender());
 
+    (sensors_command_executor, sensors_command_sender)
+}
+
+pub fn create_em2rs(
+    config: &CooledSlitControllerConfig,
+) -> (CommandExecutor<Em2rsHandler>, Em2rsCommandSender) {
     let em2rs_socket_addr = SocketAddr::new(config.em2rs_ip.parse().unwrap(), config.em2rs_port);
     let em2rs_tcp_stream = LazyTcpStream::new(
         em2rs_socket_addr,
@@ -130,33 +97,56 @@ pub fn create_controller(
     let em2rs_command_executor = CommandExecutor::new(em2rs_handler);
     let em2rs_command_sender = Em2rsCommandSender::new(em2rs_command_executor.sender());
 
-    let upper_axis = SingleAxis::new(
+    (em2rs_command_executor, em2rs_command_sender)
+}
+
+pub fn create_controller(config: &CooledSlitControllerConfig) -> CooledSlitController {
+    let (em2rs_command_executor, em2rs_command_sender) = create_em2rs(config);
+    let (sensors_command_executor, sensors_command_sender) = create_sensors(config);
+
+    let upper_axis = CooledSlitAxis::new(
+        "Y_Up".to_string(),
         0,
+        sensors_command_sender.clone(),
+        em2rs_command_sender.clone(),
         config.upper_axis.steps_per_mm,
-        sensors_command_sender.clone(),
-        em2rs_command_sender.clone(),
     );
-    let lower_axis = SingleAxis::new(
+    let lower_axis = CooledSlitAxis::new(
+        "Y_Down".to_string(),
         1,
+        sensors_command_sender.clone(),
+        em2rs_command_sender.clone(),
         config.lower_axis.steps_per_mm,
-        sensors_command_sender.clone(),
-        em2rs_command_sender.clone(),
     );
-    let left_axis = SingleAxis::new(
+    let left_axis = CooledSlitAxis::new(
+        "X_Left".to_string(),
         2,
+        sensors_command_sender.clone(),
+        em2rs_command_sender.clone(),
         config.left_axis.steps_per_mm,
-        sensors_command_sender.clone(),
-        em2rs_command_sender.clone(),
     );
-    let right_axis = SingleAxis::new(
+    let right_axis = CooledSlitAxis::new(
+        "X_Right".to_string(),
         3,
-        config.right_axis.steps_per_mm,
         sensors_command_sender.clone(),
         em2rs_command_sender.clone(),
+        config.right_axis.steps_per_mm,
     );
 
-    let axes = Axes::new(upper_axis, lower_axis, left_axis, right_axis);
-    let multi_axis = MultiAxis::new(axes);
+    let mut controller = CooledSlitController::new(
+        // vec![
+        //     Arc::new(upper_axis),
+        //     Arc::new(lower_axis),
+        //     Arc::new(left_axis),
+        //     Arc::new(right_axis),
+        // ],
+        sensors_command_executor,
+        em2rs_command_executor,
+    );
+    controller.add_axis(Arc::new(upper_axis));
+    controller.add_axis(Arc::new(lower_axis));
+    controller.add_axis(Arc::new(left_axis));
+    controller.add_axis(Arc::new(right_axis));
 
-    (sensors_command_executor, em2rs_command_executor, multi_axis)
+    controller
 }

@@ -1,7 +1,3 @@
-use crate::command_executor::{
-    motor::command_sender::Em2rsCommandSender, sensors::command_sender::SensorsCommandSender,
-};
-use em2rs::StateParams;
 use std::{
     sync::{
         Arc,
@@ -9,15 +5,19 @@ use std::{
     },
     time::{Duration, Instant},
 };
+
+use em2rs::StateParams;
 use utilities::{
     motor_controller::{Motor, MotorState},
     moving_average::MovingAverage,
 };
 
-pub struct MoveThread {
-    axis: usize,
+use crate::command_executor::{
+    encoder::command_sender::EncoderCommandSender, motor::command_sender::Em2rsCommandSender,
+};
 
-    sensors_cs: SensorsCommandSender,
+pub struct FilterMotor {
+    encoder_cs: EncoderCommandSender,
     em2rs_cs: Em2rsCommandSender,
 
     target_position: f32,
@@ -26,15 +26,20 @@ pub struct MoveThread {
 
     filter: MovingAverage,
 
-    moving: Arc<AtomicBool>,
+    is_moving: Arc<AtomicBool>,
     start_time: Instant,
     steps_per_mm: u32,
 }
 
-impl MoveThread {
+impl Drop for FilterMotor {
+    fn drop(&mut self) {
+        self.is_moving.store(false, Ordering::SeqCst);
+    }
+}
+
+impl FilterMotor {
     pub fn new(
-        axis: usize,
-        m7015_cs: SensorsCommandSender,
+        encoder_cs: EncoderCommandSender,
         em2rs_cs: Em2rsCommandSender,
         target_position: f32,
         position_window: f32,
@@ -43,9 +48,7 @@ impl MoveThread {
         steps_per_mm: u32,
     ) -> Self {
         Self {
-            axis,
-
-            sensors_cs: m7015_cs,
+            encoder_cs,
             em2rs_cs,
 
             filter: MovingAverage::new(20),
@@ -54,38 +57,28 @@ impl MoveThread {
             position_window,
             time_limit,
 
-            moving,
+            is_moving: moving,
             start_time: Instant::now(),
             steps_per_mm,
         }
     }
 
-    async fn stop(&self) -> std::io::Result<()> {
-        self.em2rs_cs.stop(self.axis).await
-    }
-
     async fn send_steps(&self, steps: i32) -> std::io::Result<()> {
-        self.em2rs_cs.send_steps(self.axis, steps).await
+        self.em2rs_cs.send_steps(steps).await
     }
 }
 
-impl Drop for MoveThread {
-    fn drop(&mut self) {
-        self.moving.store(false, Ordering::SeqCst);
-    }
-}
-
-impl Motor for MoveThread {
+impl Motor for FilterMotor {
     async fn position(&self) -> Result<f32, String> {
-        self.sensors_cs
-            .get_position(self.axis as u8)
+        self.encoder_cs
+            .get_position()
             .await
             .map_err(|err| err.to_string())
     }
 
-    async fn state(&self) -> Result<impl MotorState, String> {
+    async fn state(&self) -> Result<impl utilities::motor_controller::MotorState, String> {
         self.em2rs_cs
-            .get_state(self.axis)
+            .get_state()
             .await
             .map(|state| Em2rsState(state))
             .map_err(|err| err.to_string())
@@ -138,11 +131,11 @@ impl Motor for MoveThread {
     }
 
     fn is_moving(&self) -> bool {
-        self.moving.load(Ordering::Relaxed)
+        self.is_moving.load(Ordering::Relaxed)
     }
 
     fn set_moving(&mut self, is_moving: bool) {
-        self.moving.store(is_moving, Ordering::Relaxed);
+        self.is_moving.store(is_moving, Ordering::Relaxed);
     }
 }
 
