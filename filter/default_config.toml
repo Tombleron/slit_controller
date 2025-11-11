@@ -1,6 +1,6 @@
-encoder_ip = "192.167.0.60"
+encoder_ip = "192.168.0.60"
 encoder_port = 60003
-em2rs_ip = "192.167.0.60"
+em2rs_ip = "192.168.0.60"
 em2rs_port = 60002
 lir_id = 247
 lir_step = 0.3515625

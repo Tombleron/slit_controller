@@ -16,8 +16,8 @@ impl Default for MotorParameters {
         Self {
             acceleration: 1000,
             deceleration: 1000,
-            velocity: 1000,
-            position_window: 0.001,
+            velocity: 1,
+            position_window: 0.4,
             time_limit: Duration::from_secs(60),
         }
     }
