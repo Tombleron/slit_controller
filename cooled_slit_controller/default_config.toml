@@ -10,7 +10,7 @@ lir_step = 0.0005
 em2rs_id = 21
 em2rs_low_limit = 2
 em2rs_high_limit = 3
-steps_per_mm = 500000
+steps_per_mm = -500000
 
 [lower_axis]
 lir_id = 12
@@ -18,7 +18,7 @@ lir_step = 0.0005
 em2rs_id = 22
 em2rs_low_limit = 2
 em2rs_high_limit = 3
-steps_per_mm = 500000
+steps_per_mm = -500000
 
 [left_axis]
 lir_id = 13
@@ -26,7 +26,7 @@ lir_step = 0.0005
 em2rs_id = 23
 em2rs_low_limit = 3
 em2rs_high_limit = 2
-steps_per_mm = 10000
+steps_per_mm = -10000
 
 [right_axis]
 lir_id = 14
@@ -34,4 +34,4 @@ lir_step = 0.0005
 em2rs_id = 24
 em2rs_low_limit = 3
 em2rs_high_limit = 2
-steps_per_mm = 10000
+steps_per_mm = -10000
