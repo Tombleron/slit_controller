@@ -29,7 +29,7 @@ pub struct CooledSlitAxis {
     move_thread: Arc<Mutex<Option<JoinHandle<Result<(), String>>>>>,
     is_moving: Arc<AtomicBool>,
 
-    steps_per_mm: u32,
+    steps_per_mm: i32,
 }
 
 impl CooledSlitAxis {
@@ -38,7 +38,7 @@ impl CooledSlitAxis {
         axis: usize,
         sensors_cs: SensorsCommandSender,
         motor_cs: Em2rsCommandSender,
-        steps_per_mm: u32,
+        steps_per_mm: i32,
     ) -> Self {
         Self {
             name,

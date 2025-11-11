@@ -30,7 +30,7 @@ pub struct CooledSlitMotor {
 
     is_moving: Arc<AtomicBool>,
     start_time: Instant,
-    steps_per_mm: u32,
+    steps_per_mm: i32,
 }
 
 impl Drop for CooledSlitMotor {
@@ -48,7 +48,7 @@ impl CooledSlitMotor {
         position_window: f32,
         time_limit: Duration,
         moving: Arc<AtomicBool>,
-        steps_per_mm: u32,
+        steps_per_mm: i32,
     ) -> Self {
         Self {
             axis,

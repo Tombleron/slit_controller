@@ -8,7 +8,7 @@ pub struct CooledSlitAxisConfig {
     pub em2rs_id: u8,
     pub em2rs_low_limit: u8,
     pub em2rs_high_limit: u8,
-    pub steps_per_mm: u32,
+    pub steps_per_mm: i32,
 }
 
 #[derive(Deserialize, Debug, Serialize)]
