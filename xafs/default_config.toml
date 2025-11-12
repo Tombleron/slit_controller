@@ -12,40 +12,40 @@ lir_id = 247
 lir_step = 0.0005
 knife_trid_axis = 0
 water_trid_axis = 0
-em2rs_id = 1
-em2rs_low_limit = 0
-em2rs_high_limit = 100
-steps_per_mm = 100
+em2rs_id = 13
+em2rs_low_limit = 2
+em2rs_high_limit = 3
+steps_per_mm = 9800
 
 [slit_controller.lower_axis]
 lir_id = 246
 lir_step = 0.0005
 knife_trid_axis = 1
 water_trid_axis = 1
-em2rs_id = 2
-em2rs_low_limit = 0
-em2rs_high_limit = 100
-steps_per_mm = 100
+em2rs_id = 14
+em2rs_low_limit = 2
+em2rs_high_limit = 3
+steps_per_mm = 9800
 
 [slit_controller.left_axis]
 lir_id = 244
 lir_step = 0.0005
 knife_trid_axis = 2
 water_trid_axis = 2
-em2rs_id = 3
-em2rs_low_limit = 0
-em2rs_high_limit = 100
-steps_per_mm = 100
+em2rs_id = 16
+em2rs_low_limit = 2
+em2rs_high_limit = 3
+steps_per_mm = 9800
 
 [slit_controller.right_axis]
 lir_id = 245
 lir_step = 0.0005
 knife_trid_axis = 3
 water_trid_axis = 3
-em2rs_id = 4
-em2rs_low_limit = 0
-em2rs_high_limit = 100
-steps_per_mm = 100
+em2rs_id = 15
+em2rs_low_limit = 2
+em2rs_high_limit = 3
+steps_per_mm = 9800
 
 [attenuator.axis]
 lir_id = 243
