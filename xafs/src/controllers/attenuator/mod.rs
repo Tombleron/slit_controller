@@ -22,7 +22,7 @@ pub fn create_controller(
 ) -> AttenuatorController {
     let axis = AttenuatorAxis::new(
         "AttenuatorAxis".to_string(),
-        5,
+        4,
         sensors_command_sender,
         em2rs_command_sender,
         config.axis.steps_per_mm,
