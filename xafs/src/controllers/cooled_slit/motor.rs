@@ -90,6 +90,9 @@ impl Motor for CooledSlitMotor {
     }
 
     async fn move_relative(&mut self, error: f32) -> Result<(), String> {
+        // It has reversed movement direction
+        let error = -error;
+
         let steps = if error.abs() == 0.0 {
             0
         } else if error.abs() < 0.001 {
