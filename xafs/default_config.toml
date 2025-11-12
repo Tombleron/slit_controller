@@ -1,37 +1,71 @@
-sensors_ip = "192.168.0.57"
-sensors_port = 60002
-em2rs_ip = "192.168.0.57"
-em2rs_port = 60003
-icpcon_id = 1
+sensors_ip = "127.0.0.1"
+sensors_port = 50051
+em2rs_ip = "127.0.0.1"
+em2rs_port = 50052
 
-[upper_axis]
-lir_id = 247
-lir_step = 0.0005
+[slit_controller]
+knife_trid_id = 1
+water_trid_id = 2
+
+[slit_controller.upper_axis]
+lir_id = 1
+lir_step = 0.05000000074505806
+knife_trid_axis = 1
+water_trid_axis = 2
 em2rs_id = 1
-em2rs_low_limit = 3
-em2rs_high_limit = 2
-steps_per_mm = 9800
+em2rs_low_limit = 0
+em2rs_high_limit = 100
+steps_per_mm = 100
 
-[lower_axis]
-lir_id = 246
-lir_step = 0.0005
+[slit_controller.lower_axis]
+lir_id = 2
+lir_step = 0.05000000074505806
+knife_trid_axis = 3
+water_trid_axis = 4
 em2rs_id = 2
-em2rs_low_limit = 3
-em2rs_high_limit = 2
-steps_per_mm = 9800
+em2rs_low_limit = 0
+em2rs_high_limit = 100
+steps_per_mm = 100
 
-[left_axis]
-lir_id = 245
-lir_step = 0.0005
+[slit_controller.left_axis]
+lir_id = 3
+lir_step = 0.05000000074505806
+knife_trid_axis = 5
+water_trid_axis = 6
 em2rs_id = 3
-em2rs_low_limit = 3
-em2rs_high_limit = 2
-steps_per_mm = 9800
+em2rs_low_limit = 0
+em2rs_high_limit = 100
+steps_per_mm = 100
 
-[right_axis]
-lir_id = 244
-lir_step = 0.0005
+[slit_controller.right_axis]
+lir_id = 4
+lir_step = 0.05000000074505806
+knife_trid_axis = 7
+water_trid_axis = 8
 em2rs_id = 4
-em2rs_low_limit = 3
-em2rs_high_limit = 2
-steps_per_mm = 9800
+em2rs_low_limit = 0
+em2rs_high_limit = 100
+steps_per_mm = 100
+
+[attenuator.axis]
+lir_id = 1
+lir_step = 0.05000000074505806
+em2rs_id = 1
+em2rs_low_limit = 0
+em2rs_high_limit = 100
+steps_per_mm = 100
+
+[collimator]
+trid_id = 1
+
+[collimator.input_axis]
+trid_axis = 1
+
+[collimator.output_axis]
+trid_axis = 2
+
+[water_input]
+trid_id = 1
+
+[water_input.axis]
+trid_axis = 1

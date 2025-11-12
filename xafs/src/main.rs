@@ -1,22 +1,19 @@
-use tokio::sync::{Mutex, mpsc};
-
 use crate::{
-    communication::communication::run_communication_layer,
     config::{create_default_config, init_config},
-    controller::{
-        controller_service::{create_controller, run_controller},
-        state_monitor::run_state_monitor,
-    },
-    models::{CSlitState, SharedState},
+    controllers::create_controllers,
 };
-use std::{path::PathBuf, sync::Arc};
-mod command_executor;
-pub mod communication;
+
+use motarem::{
+    controller_manager::{ControllerManager, config::ManagerConfig},
+    motor_controller::MotorController,
+    socket_server::{SocketServer, config::SocketServerConfig},
+};
+use std::{path::PathBuf, sync::Arc, time::Duration};
+
+pub mod command_executor;
 pub mod config;
-mod controller;
 pub mod controllers;
 pub mod logging;
-pub mod models;
 
 fn should_create_config() -> bool {
     std::env::var("CREATE_CONFIG")
@@ -38,34 +35,49 @@ async fn main() -> anyhow::Result<()> {
         e
     })?;
 
-    let (command_tx, command_rx) = mpsc::channel(100);
+    let (
+        collimator,
+        cooled_slit,
+        attenuator,
+        water_input,
+        mut em2rs_command_executor,
+        mut sensors_command_executor,
+    ) = create_controllers(&config);
 
-    let state = Arc::new(Mutex::new(SharedState {
-        cslit: CSlitState::default(),
-    }));
+    let manager_config = ManagerConfig {
+        default_ttl: Duration::from_secs(1),
+        cache_capacity: 1000,
+    };
 
-    let (mut sensors_command_executor, mut em2rs_command_executor, multi_axis_controller) =
-        create_controller(config);
+    let manager = Arc::new(ControllerManager::new(manager_config));
 
-    let multi_axis = Arc::new(Mutex::new(multi_axis_controller));
-    let multi_axis_clone = Arc::clone(&multi_axis);
-    let controller_handle =
-        tokio::spawn(async move { run_controller(command_rx, multi_axis_clone).await });
+    manager
+        .register_controller(collimator.name().to_string(), Arc::new(collimator))
+        .await?;
+    manager
+        .register_controller(cooled_slit.name().to_string(), Arc::new(cooled_slit))
+        .await?;
+    manager
+        .register_controller(attenuator.name().to_string(), Arc::new(attenuator))
+        .await?;
+    manager
+        .register_controller(water_input.name().to_string(), Arc::new(water_input))
+        .await?;
 
-    let state_clone = state.clone();
-    let multi_axis_clone = Arc::clone(&multi_axis);
-    let state_monitor_handle =
-        tokio::spawn(async move { run_state_monitor(state_clone, multi_axis_clone).await });
+    let socket_config = SocketServerConfig {
+        socket_path: "/tmp/xafs_controller.sock".to_string(),
+        max_connections: 50,
+        buffer_size: 8192,
+    };
 
     let sensors_handle = tokio::task::spawn_blocking(move || sensors_command_executor.run());
     let em2rs_handle = tokio::task::spawn_blocking(move || em2rs_command_executor.run());
 
-    run_communication_layer(command_tx, state).await?;
-    controller_handle.await??;
-    state_monitor_handle.await??;
+    let mut socket_server = SocketServer::new(socket_config, manager.clone());
+    socket_server.start().await?;
 
-    sensors_handle.await??;
-    em2rs_handle.await??;
+    let _sensors_handle = sensors_handle.await?;
+    let _em2rs_handle = em2rs_handle.await?;
 
-    Ok(())
+    loop {}
 }
