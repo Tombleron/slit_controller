@@ -59,13 +59,13 @@ steps_per_mm = 5000
 trid_id = 1
 
 [collimator.input_axis]
-trid_axis = 1
+trid_axis = 0
 
 [collimator.output_axis]
-trid_axis = 2
+trid_axis = 1
 
 [water_input]
 trid_id = 1
 
 [water_input.axis]
-trid_axis = 1
+trid_axis = 0
