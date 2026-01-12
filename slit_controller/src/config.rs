@@ -1,9 +1,10 @@
-use crate::controller::multi_axis::MultiAxisConfig;
 use anyhow::Context as _;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
+
+use crate::controllers::slit_controller::config::SlitControllerConfig;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -72,12 +73,12 @@ impl ConfigManager {
         Self { options }
     }
 
-    pub fn load(&self) -> anyhow::Result<MultiAxisConfig> {
+    pub fn load(&self) -> anyhow::Result<SlitControllerConfig> {
         let config_path = self.options.config_path.clone();
 
         if !config_path.exists() {
             if self.options.create_if_missing {
-                let default_config = MultiAxisConfig::default();
+                let default_config = SlitControllerConfig::default();
                 self.save(&default_config)
                     .context("Failed to save default config")?;
                 return Ok(default_config);
@@ -92,13 +93,13 @@ impl ConfigManager {
         let content =
             fs::read_to_string(config_path).map_err(|e| ConfigError::ReadError { source: e })?;
 
-        let config: MultiAxisConfig =
+        let config: SlitControllerConfig =
             toml::from_str(&content).map_err(|e| ConfigError::ParseError { source: e })?;
 
         Ok(config)
     }
 
-    pub fn save(&self, config: &MultiAxisConfig) -> anyhow::Result<()> {
+    pub fn save(&self, config: &SlitControllerConfig) -> anyhow::Result<()> {
         let config_path = &self.options.config_path;
 
         // Create parent directory if it doesn't exist
@@ -116,7 +117,7 @@ impl ConfigManager {
     }
 }
 
-pub fn init_config() -> anyhow::Result<(ConfigManager, MultiAxisConfig)> {
+pub fn init_config() -> anyhow::Result<(ConfigManager, SlitControllerConfig)> {
     let manager = ConfigManager::new();
     let config = manager.load()?;
     Ok((manager, config))
@@ -124,7 +125,7 @@ pub fn init_config() -> anyhow::Result<(ConfigManager, MultiAxisConfig)> {
 
 pub fn init_config_with_options(
     options: ConfigOptions,
-) -> anyhow::Result<(ConfigManager, MultiAxisConfig)> {
+) -> anyhow::Result<(ConfigManager, SlitControllerConfig)> {
     let manager = ConfigManager::with_options(options);
     let config = manager.load()?;
     Ok((manager, config))
@@ -141,13 +142,13 @@ pub fn create_default_config<P: AsRef<Path>>(path: Option<P>) -> anyhow::Result<
     };
 
     let manager = ConfigManager::with_options(options);
-    let default_config = MultiAxisConfig::default();
+    let default_config = SlitControllerConfig::default();
     manager.save(&default_config)?;
 
     Ok(())
 }
 
-pub fn load_config() -> anyhow::Result<MultiAxisConfig> {
+pub fn load_config() -> anyhow::Result<SlitControllerConfig> {
     let (_manager, config) = init_config()?;
     Ok(config)
 }

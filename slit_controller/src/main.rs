@@ -1,17 +1,19 @@
-use std::{path::PathBuf, sync::Arc};
-use tokio::sync::{mpsc, Mutex};
-
-use slit_controller::{
-    communication::communication::run_communication_layer,
+use crate::{
     config::{create_default_config, init_config},
-    controller::{
-        controller_service::{create_controller, run_controller},
-        state_monitor::run_state_monitor,
-    },
-    logging,
-    models::SharedState,
+    controllers::slit_controller::create_controller,
 };
-use tracing::info;
+
+use motarem::{
+    controller_manager::{config::ManagerConfig, ControllerManager},
+    motor_controller::MotorController,
+    socket_server::{config::SocketServerConfig, SocketServer},
+};
+use std::{path::PathBuf, sync::Arc, time::Duration};
+
+pub mod command_executor;
+pub mod config;
+pub mod controllers;
+pub mod logging;
 
 fn should_create_config() -> bool {
     std::env::var("CREATE_CONFIG")
@@ -33,54 +35,29 @@ async fn main() -> anyhow::Result<()> {
         e
     })?;
 
-    info!("Starting slit controller...");
-    let (command_tx, command_rx) = mpsc::channel(100);
+    let controller = create_controller(&config);
 
-    let state = Arc::new(Mutex::new(SharedState {
-        axes: [None, None, None, None],
-    }));
+    let manager_config = ManagerConfig {
+        default_ttl: Duration::from_secs(1),
+        cache_capacity: 1000,
+    };
 
-    let (
-        mut rf256_command_executor,
-        mut trid_command_executor,
-        mut upper_standa_command_executor,
-        mut lower_standa_command_executor,
-        mut right_standa_command_executor,
-        mut left_standa_command_executor,
-        multi_axis_controller,
-    ) = create_controller(config);
+    let manager = Arc::new(ControllerManager::new(manager_config));
 
-    let multi_axis = Arc::new(Mutex::new(multi_axis_controller));
-    let multi_axis_clone = Arc::clone(&multi_axis);
-    let controller_handle =
-        tokio::spawn(async move { run_controller(command_rx, multi_axis_clone).await });
+    manager
+        .register_controller(controller.name().to_string(), Arc::new(controller))
+        .await?;
 
-    let state_clone = state.clone();
-    let multi_axis_clone = Arc::clone(&multi_axis);
-    let state_monitor_handle =
-        tokio::spawn(async move { run_state_monitor(state_clone, multi_axis_clone).await });
+    let socket_config = SocketServerConfig {
+        socket_path: "/tmp/slit_controller.sock".to_string(),
+        max_connections: 50,
+        buffer_size: 8192,
+    };
 
-    let rf256_handle = tokio::task::spawn_blocking(move || rf256_command_executor.run());
-    let trid_handle = tokio::task::spawn_blocking(move || trid_command_executor.run());
-    let upper_standa_handle =
-        tokio::task::spawn_blocking(move || upper_standa_command_executor.run());
-    let lower_standa_handle =
-        tokio::task::spawn_blocking(move || lower_standa_command_executor.run());
-    let right_standa_handle =
-        tokio::task::spawn_blocking(move || right_standa_command_executor.run());
-    let left_standa_handle =
-        tokio::task::spawn_blocking(move || left_standa_command_executor.run());
+    let mut socket_server = SocketServer::new(socket_config, manager.clone());
+    socket_server.start().await?;
 
-    run_communication_layer(command_tx, state).await?;
-    controller_handle.await??;
-    state_monitor_handle.await??;
+    loop {}
 
-    rf256_handle.await??;
-    trid_handle.await??;
-    upper_standa_handle.await??;
-    lower_standa_handle.await??;
-    right_standa_handle.await??;
-    left_standa_handle.await??;
-
-    Ok(())
+    // Ok(())
 }

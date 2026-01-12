@@ -100,4 +100,16 @@ impl StandaCommandSender {
             )),
         }
     }
+
+    pub async fn reconnect(&self) -> io::Result<()> {
+        let response = self.sender.send_command(MotorCommand::Reconnect).await?;
+
+        match response {
+            MotorResponse::Ok => Ok(()),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Unexpected response type",
+            )),
+        }
+    }
 }

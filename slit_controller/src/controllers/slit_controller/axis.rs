@@ -1,30 +1,31 @@
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
-use em2rs::StateParams;
 use motarem::axis::{
-    Axis, limit_switches::LimitSwitches, movement_parameters::MovementParams, state::AxisState,
-    state_info::AxisStateInfo,
+    limit_switches::LimitSwitches, movement_parameters::MovementParams, state::AxisState,
+    state_info::AxisStateInfo, Axis,
 };
+use standa::command::state::StateParams;
 use tokio::{sync::Mutex, task::JoinHandle};
 use utilities::motor_controller::{Motor as _, MotorHolder};
 
-use super::params::MotorParameters;
 use crate::{
     command_executor::{
-        motor::command_sender::Em2rsCommandSender, sensors::command_sender::SensorsCommandSender,
+        encoder::command_sender::EncoderCommandSender, motor::command_sender::StandaCommandSender,
+        temperature::command_sender::TridCommandSender,
     },
-    controllers::cooled_slit::motor::CooledSlitMotor,
+    controllers::slit_controller::{motor::SlitMotor, params::MotorParameters},
 };
 
-pub struct CooledSlitAxis {
+pub struct SlitAxis {
     pub name: String,
-    axis: usize,
+    axis: u8,
 
-    sensors_cs: SensorsCommandSender,
-    motor_cs: Em2rsCommandSender,
+    rf256_cs: EncoderCommandSender,
+    trid_cs: TridCommandSender,
+    standa_cs: StandaCommandSender,
 
     move_thread: Arc<Mutex<Option<JoinHandle<Result<(), String>>>>>,
     is_moving: Arc<AtomicBool>,
@@ -32,19 +33,21 @@ pub struct CooledSlitAxis {
     steps_per_mm: i32,
 }
 
-impl CooledSlitAxis {
+impl SlitAxis {
     pub fn new(
         name: String,
-        axis: usize,
-        sensors_cs: SensorsCommandSender,
-        motor_cs: Em2rsCommandSender,
+        axis: u8,
+        rf256_cs: EncoderCommandSender,
+        trid_cs: TridCommandSender,
+        standa_cs: StandaCommandSender,
         steps_per_mm: i32,
     ) -> Self {
         Self {
             name,
             axis,
-            sensors_cs,
-            motor_cs,
+            rf256_cs,
+            trid_cs,
+            standa_cs,
             move_thread: Arc::new(Mutex::new(None)),
             is_moving: Arc::new(AtomicBool::new(false)),
             steps_per_mm,
@@ -52,15 +55,15 @@ impl CooledSlitAxis {
     }
 
     pub async fn get_temperature(&self) -> Result<f32, String> {
-        self.sensors_cs
-            .get_temperature(self.axis as u8)
+        self.trid_cs
+            .read_temperature(self.axis)
             .await
-            .map_err(|e| format!("Failed to get temperature: {}", e))
+            .map_err(|e| format!("Failed to read temperature: {}", e))
     }
 }
 
 #[async_trait::async_trait]
-impl Axis for CooledSlitAxis {
+impl Axis for SlitAxis {
     fn name(&self) -> &str {
         &self.name
     }
@@ -94,10 +97,7 @@ impl Axis for CooledSlitAxis {
             AxisState::On
         };
 
-        let limit_switches = match (
-            motor_state.low_limit_triggered(),
-            motor_state.high_limit_triggered(),
-        ) {
+        let limit_switches = match (motor_state.left_switch(), motor_state.right_switch()) {
             (true, true) => LimitSwitches::Both,
             (true, false) => LimitSwitches::Lower,
             (false, true) => LimitSwitches::Upper,
@@ -140,11 +140,13 @@ impl Axis for CooledSlitAxis {
             "velocity".to_string(),
             "acceleration".to_string(),
             "deceleration".to_string(),
+            "position_window".to_string(),
+            "time_limit".to_string(),
         ])
     }
 }
 
-impl MotorHolder for CooledSlitAxis {
+impl MotorHolder for SlitAxis {
     type MovementParameters = MotorParameters;
     type MotorState = StateParams;
 
@@ -152,8 +154,8 @@ impl MotorHolder for CooledSlitAxis {
         if self.is_moving() {
             self.is_moving.store(false, Ordering::Relaxed);
 
-            self.motor_cs
-                .stop(self.axis)
+            self.standa_cs
+                .stop()
                 .await
                 .map_err(|e| format!("Failed to stop motor: {}", e))?;
 
@@ -167,41 +169,47 @@ impl MotorHolder for CooledSlitAxis {
     }
 
     async fn update_parameters(&self, parameters: &Self::MovementParameters) -> Result<(), String> {
-        self.motor_cs
-            .set_acceleration(self.axis, parameters.acceleration)
+        self.standa_cs
+            .set_acceleration(parameters.acceleration)
             .await
             .map_err(|e| format!("Failed to set acceleration: {}", e))?;
-        self.motor_cs
-            .set_deceleration(self.axis, parameters.deceleration)
+        self.standa_cs
+            .set_deceleration(parameters.deceleration)
             .await
             .map_err(|e| format!("Failed to set deceleration: {}", e))?;
-        self.motor_cs
-            .set_velocity(self.axis, parameters.velocity)
+        self.standa_cs
+            .set_velocity(parameters.velocity)
             .await
             .map_err(|e| format!("Failed to set velocity: {}", e))?;
         Ok(())
     }
 
     async fn get_state(&self) -> Result<Self::MotorState, String> {
-        self.motor_cs
-            .get_state(self.axis)
+        match self
+            .standa_cs
+            .get_state()
             .await
             .map_err(|e| format!("Failed to get state: {}", e))
+        {
+            Err(e) => {
+                self.standa_cs
+                    .reconnect()
+                    .await
+                    .map_err(|e| format!("Failed to reconnect: {}", e))?;
+                self.standa_cs
+                    .get_state()
+                    .await
+                    .map_err(|e| format!("Failed to get state: {}", e))
+            }
+            Ok(s) => Ok(s),
+        }
     }
 
     async fn get_position(&self) -> Result<f32, String> {
-        self.sensors_cs
-            .get_position(self.axis as u8)
+        self.rf256_cs
+            .get_position(self.axis)
             .await
             .map_err(|e| format!("Failed to get position: {}", e))
-    }
-
-    fn is_moving(&self) -> bool {
-        self.is_moving.load(Ordering::Relaxed)
-    }
-
-    fn set_moving(&self, is_moving: bool) {
-        self.is_moving.store(is_moving, Ordering::Relaxed);
     }
 
     async fn init_motion(
@@ -209,10 +217,10 @@ impl MotorHolder for CooledSlitAxis {
         target: f32,
         parameters: &Self::MovementParameters,
     ) -> Result<(), String> {
-        let mut move_thread = CooledSlitMotor::new(
+        let mut move_thread = SlitMotor::new(
+            self.rf256_cs.clone(),
             self.axis,
-            self.sensors_cs.clone(),
-            self.motor_cs.clone(),
+            self.standa_cs.clone(),
             target,
             parameters.position_window,
             parameters.time_limit,
@@ -226,5 +234,13 @@ impl MotorHolder for CooledSlitAxis {
         *move_thread = Some(handle);
 
         Ok(())
+    }
+
+    fn is_moving(&self) -> bool {
+        self.is_moving.load(Ordering::Relaxed)
+    }
+
+    fn set_moving(&self, is_moving: bool) {
+        self.is_moving.store(is_moving, Ordering::Relaxed);
     }
 }

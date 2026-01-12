@@ -56,7 +56,7 @@ impl CooledSlitMotor {
             sensors_cs: m7015_cs,
             em2rs_cs,
 
-            filter: MovingAverage::new(20),
+            filter: MovingAverage::new(5),
 
             target_position,
             position_window,

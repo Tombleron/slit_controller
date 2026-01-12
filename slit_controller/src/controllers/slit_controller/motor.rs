@@ -8,15 +8,16 @@ use std::{
 };
 
 use standa::command::state::StateParams;
-use utilities::motor_controller::{Motor, MotorState};
+use utilities::{
+    motor_controller::{Motor, MotorState},
+    moving_average::MovingAverage,
+};
 
 use crate::command_executor::{
     encoder::command_sender::EncoderCommandSender, motor::command_sender::StandaCommandSender,
 };
 
-const STEPS_PER_MM: u32 = 800;
-
-pub struct MoveThread {
+pub struct SlitMotor {
     rf256_cs: EncoderCommandSender,
     rf256_axis: u8,
     standa_cs: StandaCommandSender,
@@ -27,33 +28,45 @@ pub struct MoveThread {
 
     filter: MovingAverage,
 
-    moving: Arc<AtomicBool>,
+    is_moving: Arc<AtomicBool>,
     start_time: Instant,
+    steps_per_mm: i32,
 }
 
-impl MoveThread {
+impl Drop for SlitMotor {
+    fn drop(&mut self) {
+        self.is_moving.store(false, Ordering::Relaxed);
+    }
+}
+
+impl SlitMotor {
     pub fn new(
         rf256_cs: EncoderCommandSender,
-        standa_cs: StandaCommandSender,
         rf256_axis: u8,
+        standa_cs: StandaCommandSender,
         target_position: f32,
         position_window: f32,
         time_limit: Duration,
-        moving: Arc<AtomicBool>,
+        is_moving: Arc<AtomicBool>,
+        steps_per_mm: i32,
     ) -> Self {
-        Self {
-            rf256_cs,
-            standa_cs,
-            rf256_axis,
+        let start_time = Instant::now();
+        let filter = MovingAverage::new(10);
 
-            filter: MovingAverage::new(20),
+        SlitMotor {
+            rf256_cs,
+            rf256_axis,
+            standa_cs,
 
             target_position,
             position_window,
             time_limit,
 
-            moving,
-            start_time: Instant::now(),
+            filter,
+
+            is_moving,
+            start_time,
+            steps_per_mm,
         }
     }
 
@@ -62,13 +75,7 @@ impl MoveThread {
     }
 }
 
-impl Drop for MoveThread {
-    fn drop(&mut self) {
-        self.moving.store(false, Ordering::SeqCst);
-    }
-}
-
-impl Motor for MoveThread {
+impl Motor for SlitMotor {
     async fn position(&self) -> Result<f32, String> {
         self.rf256_cs
             .get_position(self.rf256_axis)
@@ -90,7 +97,7 @@ impl Motor for MoveThread {
         } else if error.abs() < 0.001 {
             (0, if error > 0.0 { 5 } else { -5 })
         } else {
-            ((error * STEPS_PER_MM as f32) as i32, 0)
+            ((error * self.steps_per_mm as f32) as i32, 0)
         };
 
         let _result = self
@@ -131,11 +138,11 @@ impl Motor for MoveThread {
     }
 
     fn is_moving(&self) -> bool {
-        self.moving.load(Ordering::Relaxed)
+        self.is_moving.load(Ordering::Relaxed)
     }
 
     fn set_moving(&mut self, is_moving: bool) {
-        self.moving.store(is_moving, Ordering::Relaxed);
+        self.is_moving.store(is_moving, Ordering::Relaxed);
     }
 }
 
@@ -152,35 +159,5 @@ impl MotorState for StandaState {
 
     fn is_moving(&self) -> bool {
         self.0.is_moving()
-    }
-}
-
-struct MovingAverage {
-    values: Vec<f32>,
-    max_size: usize,
-}
-
-impl MovingAverage {
-    pub fn new(max_size: usize) -> Self {
-        Self {
-            values: Vec::with_capacity(max_size),
-            max_size,
-        }
-    }
-
-    pub fn add(&mut self, value: f32) {
-        if self.values.len() >= self.max_size {
-            self.values.remove(0);
-        }
-        self.values.push(value);
-    }
-
-    pub fn get_rms(&self) -> f32 {
-        if self.values.is_empty() {
-            0.0
-        } else {
-            let sum_of_squares: f32 = self.values.iter().map(|&v| v * v).sum();
-            (sum_of_squares / self.values.len() as f32).sqrt()
-        }
     }
 }

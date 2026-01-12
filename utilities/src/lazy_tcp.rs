@@ -76,9 +76,7 @@ impl LazyTcpStream {
                     if e.kind() == std::io::ErrorKind::ConnectionReset
                         || e.kind() == std::io::ErrorKind::ConnectionAborted =>
                 {
-                    let _ = stream.shutdown(Shutdown::Both);
-                    self.stream = None;
-                    self.connect()
+                    self.reconnect()
                 }
                 _ => Ok(()),
             }

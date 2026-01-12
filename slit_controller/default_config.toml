@@ -1,28 +1,33 @@
-rf256_ip = "192.168.0.55"
-rf256_port = 60003
+rf256_ip = "192.168.0.51"
+rf256_port = 60002
 trid_ip = "192.168.0.51"
-trid_port = 60002
+trid_port = 60003
+trid_device_id = 1
 
 [upper_axis]
-standa_ip = "192.168.0.204"
+rf256_id = 9
+trid_id = 1
+standa_ip = "192.168.0.200"
 standa_port = 2000
-rf256_id = 5
-trid_id = 0
+steps_per_mm = 800
 
 [lower_axis]
-standa_ip = "192.168.0.204"
-standa_port = 3000
-rf256_id = 15
-trid_id = 1
-
-[left_axis]
-standa_ip = "192.168.0.205"
-standa_port = 2000
-rf256_id = 6
+rf256_id = 10
 trid_id = 2
+standa_ip = "192.168.0.200"
+standa_port = 3000
+steps_per_mm = 800
 
 [right_axis]
-standa_ip = "192.168.0.205"
-standa_port = 3000
-rf256_id = 4
+rf256_id = 7
 trid_id = 3
+standa_ip = "192.168.0.201"
+standa_port = 2000
+steps_per_mm = 800
+
+[left_axis]
+rf256_id = 8
+trid_id = 4
+standa_ip = "192.168.0.201"
+standa_port = 3000
+steps_per_mm = 800

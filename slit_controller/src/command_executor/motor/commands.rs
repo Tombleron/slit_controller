@@ -53,7 +53,10 @@ impl Command for MotorCommand {
                 handler.move_relative(steps, substeps)?;
                 Ok(MotorResponse::Ok)
             }
-            MotorCommand::Reconnect => todo!(),
+            MotorCommand::Reconnect => {
+                handler.reconnect()?;
+                Ok(MotorResponse::Ok)
+            }
         }
     }
 }
